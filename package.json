@@ -1,0 +1,13 @@
+{
+  "name": "window-todo",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "validate": "claude plugin validate .",
+    "test": "claude plugin test .",
+    "check": "npm run validate && npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

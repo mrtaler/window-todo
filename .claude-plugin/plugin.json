@@ -1,0 +1,32 @@
+{
+  "name": "window-todo",
+  "version": "0.1.0",
+  "description": "The task plan (a plan tool with a pane, status line and a gate) plus a window list of open items, kept per session and fed by a small observer model.",
+  "author": {
+    "name": "mrTaler"
+  },
+  "license": "MIT",
+  "keywords": [
+    "plan",
+    "todo",
+    "tasks",
+    "pane",
+    "status-line",
+    "window-list"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enforce": {
+      "type": "boolean",
+      "title": "Enforce plan",
+      "description": "Block state-changing tools until a plan exists",
+      "default": true
+    },
+    "accentColor": {
+      "type": "string",
+      "title": "Accent color",
+      "description": "Theme key or color for the current step, progress bar and running state (for example claude, magenta, green, #c084fc)",
+      "default": "claude"
+    }
+  }
+}
