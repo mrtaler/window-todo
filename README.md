@@ -5,13 +5,23 @@ A Claude Code mod with two lists in one pane:
 1. **The task plan.** Claude writes it through the `plan` tool; the pane and the status line show it
    with live activity, and state-changing tools are denied until a plan exists. This layer is
    claude-mod-todo-list 0.3.1 as it is.
-2. **The window list** (in progress). Open items of this window: tasks `T`, findings `F`,
-   questions `Q`, waits `W`. A small observer model proposes new, closed and skipped items after
-   each answered turn; `/todo skip|done|add` does the same by hand. Ids never repeat, a skipped
-   item moves down with its id, and the list survives `/resume`.
+2. **The window list.** Open items of this window, under the plan: tasks `T`, fixes `F`,
+   questions to the user `Q`, waits on something outside `W`. Ids are numbered per kind and never
+   reused; a closed item stays, struck through; a skipped item moves to the bottom of the open
+   items with its id.
+   The list is kept per session, so `/resume` brings it back. The status line counts the open
+   items, for example `T2 F1 Q1`.
 
-A Stop reminder returns the turn once when the answer ends with a question that the window list
-does not carry as a `Q` item.
+Three ways fill the window list:
+
+- **The observer.** After each answered main-loop turn a small model (`haiku`) reads the turn and
+  the list, then closes, skips and adds items. «F1 can wait» in your message moves F1 down.
+- **The `window` tool.** Claude adds, closes and skips items itself; every call answers the list
+  as it is now.
+- **The command.** `/todo add <T|F|Q|W> <title>`, `/todo done <ids>`, `/todo skip <ids>`.
+
+**The Stop reminder.** When an answer ends on a question and the list has no open `Q` item, the
+turn is sent back once with a request to add it.
 
 ## Development
 
