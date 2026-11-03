@@ -27,12 +27,13 @@ const SHOW = { tool: TOOL, op: 'show' }
 let seenIds: string[] = []
 const lastId = (): string => seenIds.at(-1) ?? ''
 
-// The world beneath the mod: a clock, a log sink and a status recorder.
+// The world beneath the mod: a clock, a session id, a log sink and a status recorder.
 const setup = (on: On): { logs: string[]; statuses: Array<string | undefined> } => {
   const logs: string[] = []
   const statuses: Array<string | undefined> = []
   seenIds = []
   mock.clock(on)
+  on('session.id', async () => ({ value: 's1' }))
   on('tool.call', async (_$, e, next) => {
     seenIds.push(e.tool_use_id)
 

@@ -41,6 +41,11 @@ export type ActivityState = {
   since: number
 }
 export type PlanToolState = { name: string | null; offered: boolean }
+// The window list: open items of this window, kept per session. Kinds are tasks, findings,
+// questions and waits; `issued` holds the last number handed out per kind, so an id is never reused.
+export type WindowKind = 'T' | 'F' | 'Q' | 'W'
+export type WindowItem = { id: string; kind: WindowKind; title: string; isDone: boolean }
+export type WindowList = { items: WindowItem[]; issued: { T: number; F: number; Q: number; W: number } }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -77,6 +82,11 @@ declare module 'claude-code' {
       firstPromptOpen: 'idle' | 'armed' | 'done'
       planTool: { name: string | null; offered: boolean }
       paneFit: { columns: number; rows: number; placement: string; wantRows: number } | null
+      window: {
+        items: Array<{ id: string; kind: 'T' | 'F' | 'Q' | 'W'; title: string; isDone: boolean }>
+        issued: { T: number; F: number; Q: number; W: number }
+      }
+      windowSession: string
     }
   }
 }

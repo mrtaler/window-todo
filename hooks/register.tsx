@@ -1,6 +1,6 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandPresentation, EngineInterface, Register } from 'claude-code'
-import type { Plan, PlanToolState, TaskState } from '../types'
+import type { ActivityState, Plan, PlanToolState, TaskState } from '../types'
 import { emptyActivity, reduceActivity } from './activity'
 import type { ActivityEvent } from './activity'
 import { needsRefit } from './fit'
@@ -23,7 +23,11 @@ import {
 import { taskCreateFrom, taskUpdateFailed, taskUpdateFrom, todosFrom } from './post-tool'
 import { clean } from './sanitize'
 import { ACCENT_STORE_KEY, resolveAccent, validAccent } from './accent'
-import { buildTree, DEFAULT_WIDTH, paneRows, statusLine } from './tree'
+import { buildTree, DEFAULT_ACCENT, DEFAULT_WIDTH, PANE_MAX_ROWS, paneRows, statusLine } from './tree'
+import type { TreeLine, TreeOptions } from './tree'
+import { addItem, closeItems, KIND_NAMES, parseKind, skipItems, windowLines, windowRowCount, windowStatus } from './window'
+import type { WindowList, WindowResult } from './window'
+import { changeWindow, currentWindow, forgetWindow, readWindow, sweepWindows } from './window-store'
 
 // D4: the registered name is `mcp__<plugin>__<name>`, confirmed by the T01 spike (Q1).
 const PLAN_TOOL_FULL_NAME = `mcp__window-todo__${PLAN_TOOL_SHORT_NAME}`
@@ -35,7 +39,9 @@ const DOCK_MIN_COLUMNS = 110
 // The host drops $.ui.log text over 4096 characters (T01 extra findings).
 const LOG_LIMIT = 4000
 const ASK_TOOL = 'AskUserQuestion'
-const USAGE = 'Usage: /todo (opens the pane) | /todo clear | /todo off | /todo on | /todo color <name|#hex|reset>'
+const USAGE =
+  'Usage: /todo (opens the pane) | /todo clear | /todo off | /todo on | /todo color <name|#hex|reset>' +
+  ' | /todo add <T|F|Q|W> <title> | /todo done <ids> | /todo skip <ids>'
 const unknownColorText = (value: string): string =>
   `Unknown color "${value}". Use a name (red, green, yellow, blue, magenta, cyan, white, gray, claude, or a ...Bright variant) or #rrggbb. For orange, try claude.`
 const NOT_OWNER_TEXT =
@@ -97,9 +103,24 @@ function isPlanTool(tool: string, stored: string | null): boolean {
 }
 
 async function refreshStatus($: EngineInterface): Promise<void> {
-  const [p, a] = await Promise.all([read($, plan), read($, activity)])
-  $.ui.status(statusLine(p, a))
+  const [p, a, w] = await Promise.all([read($, plan), read($, activity), readWindow($)])
+  const parts = [statusLine(p, a), windowStatus(w)].filter((part): part is string => part !== undefined)
+  $.ui.status(parts.length === 0 ? undefined : parts.join(' · '))
 }
+
+// The plan tree, then the window section below a blank row. The window section is kept whole
+// while the plan has room for at least its header; the plan is the part that shrinks.
+const paneLines = (p: Plan, a: ActivityState, w: WindowList, opts: TreeOptions): TreeLine[] => {
+  const section = windowLines(w, opts.width ?? DEFAULT_WIDTH, opts.accent ?? DEFAULT_ACCENT)
+  if (section.length === 0) return buildTree(p, a, opts)
+  const planRoom = Math.max(2, opts.maxLines - section.length - 1)
+
+  return [...buildTree(p, a, { ...opts, maxLines: planRoom }), { text: '', segments: [{ text: '', bold: false, dim: false }] }, ...section]
+}
+
+// The body height to ask the host for: the plan's rows plus the window section, clamped.
+const wantRows = (p: Plan, a: ActivityState, w: WindowList): number =>
+  Math.min(PANE_MAX_ROWS, paneRows(p, a) + windowRowCount(w))
 
 // Feeds one event to the activity reducer and redraws the status line. Top-level function
 // declaration because `$` is passed to it (plugin validate rule).
@@ -138,8 +159,8 @@ function debugLog($: EngineInterface, text: string): void {
 // session-start open sees an empty plan, so 6 rows). `resize` closes it first so the person's
 // `/todo` re-opens at the height the plan wants now.
 async function openPane($: EngineInterface, resize = false): Promise<void> {
-  const [p, a] = await Promise.all([read($, plan), read($, activity)])
-  const rows = paneRows(p, a)
+  const [p, a, w] = await Promise.all([read($, plan), read($, activity), readWindow($)])
+  const rows = wantRows(p, a, w)
   if (resize && (await $.ui.panes()).some(pane => pane.id === PANE)) await $.ui.close({ id: PANE })
   await $.ui.open({ id: PANE, title: 'Plan', rows, columns: PANE_COLUMNS })
 }
@@ -197,6 +218,8 @@ async function runTodoCommand(
 
     return { text: `Plan pane opened.${tip}` }
   }
+  const windowCommand = /^(add|done|skip)(?:\s+|$)(.*)$/s.exec(raw)
+  if (windowCommand !== null) return runWindowCommand($, (windowCommand[1] ?? '').toLowerCase(), windowCommand[2] ?? '')
   if (word === 'off' || word === 'on') {
     await update($, enforceSession, () => word === 'on')
 
@@ -208,6 +231,50 @@ async function runTodoCommand(
   await refreshStatus($)
 
   return { text: 'Plan cleared.' }
+}
+
+// `/todo add <kind> <title>`, `/todo done <ids>` and `/todo skip <ids>` on the window list.
+async function runWindowCommand($: EngineInterface, verb: string, rest: string): Promise<{ text: string }> {
+  if (verb === 'add') {
+    const [rawKind = '', ...words] = rest.trim().split(/\s+/)
+    const kind = parseKind(rawKind)
+    if (kind === null) return { text: USAGE }
+    let reply = ''
+    await changeWindow($, list => {
+      const added = addItem(list, kind, words.join(' '))
+      if ('error' in added) {
+        reply = `${added.error} Nothing was added.`
+
+        return list
+      }
+      reply = `Added ${added.id} (${KIND_NAMES[kind]}).`
+
+      return added.list
+    })
+    await refreshStatus($)
+
+    return { text: reply }
+  }
+  const rawIds = rest.split(/[\s,]+/).filter(id => id !== '')
+  if (rawIds.length === 0) return { text: USAGE }
+  let result: WindowResult | null = null
+  await changeWindow($, list => {
+    result = verb === 'done' ? closeItems(list, rawIds) : skipItems(list, rawIds)
+
+    return result.list
+  })
+  await refreshStatus($)
+
+  return { text: windowReply(verb, result) }
+}
+
+const windowReply = (verb: string, result: WindowResult | null): string => {
+  if (result === null) return 'Nothing was changed.'
+  const parts: string[] = []
+  if (result.changed.length > 0) parts.push(`${verb === 'done' ? 'Closed' : 'Moved down'}: ${result.changed.join(', ')}.`)
+  if (result.unknown.length > 0) parts.push(`Not in the list: ${result.unknown.join(', ')}.`)
+
+  return parts.length === 0 ? 'Nothing was changed.' : parts.join(' ')
 }
 
 // A toast failure must never change the deny/allow outcome of the gate. Answers whether it was shown.
@@ -419,6 +486,11 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     // Load the colour saved by `/todo color`. A store error or a bad value keeps the default.
     await loadSavedAccent($)
+    await guard($, 'window load', undefined, async () => {
+      await sweepWindows($)
+      await currentWindow($)
+      await refreshStatus($)
+    })
     await guard($, 'session.start', undefined, async () => {
       try {
         const registered = await $.tool.register({
@@ -543,6 +615,8 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
+    // The next session (a /clear, or the one /resume opens) loads its own list on first use.
+    if (e.reason === 'clear' || e.reason === 'resume') await guard($, 'window forget', undefined, () => forgetWindow($))
     if (e.reason === 'clear') {
       await guard($, 'session.end', undefined, () => applyActivity($, { type: 'sessionClear' }))
       await guard($, 'session.end', undefined, () => update($, dropShown, () => false))
@@ -650,6 +724,11 @@ export const register: Register = (on, options) => {
       await update($, task, t => onNewPrompt(t, current, e.text))
     })
     await guard($, 'turn.start activity', undefined, () => applyActivity($, { type: 'turnStart' }))
+    // After a /resume this is the first point where $.session.id() names the resumed session.
+    await guard($, 'window load', undefined, async () => {
+      await currentWindow($)
+      await refreshStatus($)
+    })
     // D12: the plan rides each new prompt as a user-role row the model reads (the person does not
     // see it as typed), which also resyncs ids after a compaction.
     await guard($, 'plan context', undefined, async () => {
@@ -671,7 +750,12 @@ export const register: Register = (on, options) => {
       },
       async () => {
         const { Box, Text } = $.ui.resolve(e)
-        const [p, a, override] = await Promise.all([read($, plan), read($, activity), read($, accentOverride)])
+        const [p, a, override, w] = await Promise.all([
+          read($, plan),
+          read($, activity),
+          read($, accentOverride),
+          readWindow($),
+        ])
         // The engine clips the body to scroll.bodyRows, so the tree must fit that and not the
         // whole terminal, or the bottom (usually the current step) is cut off silently.
         const bodyRows = e.props.scroll?.bodyRows ?? 0
@@ -687,7 +771,7 @@ export const register: Register = (on, options) => {
             columns: e.viewport.columns,
             rows: e.viewport.rows,
             placement: e.props.placement,
-            wantRows: paneRows(p, a),
+            wantRows: wantRows(p, a, w),
           }
           const prev = await read($, paneFit)
           if (needsRefit(prev, fit)) {
@@ -697,7 +781,7 @@ export const register: Register = (on, options) => {
 
         return (
           <Box flexDirection="column">
-            {buildTree(p, a, { maxLines, width, accent }).map((line, i) => (
+            {paneLines(p, a, w, { maxLines, width, accent }).map((line, i) => (
               <Text key={`line-${i}`} wrap="truncate-end">
                 {line.segments.length === 1 && line.text === ''
                   ? ' '
