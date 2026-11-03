@@ -25,7 +25,18 @@ import { clean } from './sanitize'
 import { ACCENT_STORE_KEY, resolveAccent, validAccent } from './accent'
 import { buildTree, DEFAULT_ACCENT, DEFAULT_WIDTH, PANE_MAX_ROWS, paneRows, statusLine } from './tree'
 import type { TreeLine, TreeOptions } from './tree'
-import { addItem, closeItems, KIND_NAMES, parseKind, skipItems, windowLines, windowRowCount, windowStatus } from './window'
+import {
+  addItem,
+  closeItems,
+  describeWindow,
+  hasOpenQuestion,
+  KIND_NAMES,
+  parseKind,
+  skipItems,
+  windowLines,
+  windowRowCount,
+  windowStatus,
+} from './window'
 import type { WindowList, WindowResult } from './window'
 import { changeWindow, currentWindow, forgetWindow, readWindow, sweepWindows } from './window-store'
 import {
@@ -39,6 +50,14 @@ import {
   parseObserverReply,
 } from './observer'
 import type { ObserverTurn } from './observer'
+import { asksUser, STOP_NUDGE } from './stop'
+import {
+  parseWindowInput,
+  WINDOW_INPUT_SCHEMA,
+  WINDOW_TOOL_DESCRIPTION,
+  WINDOW_TOOL_FULL_NAME,
+  WINDOW_TOOL_SHORT_NAME,
+} from './window-tool'
 
 // D4: the registered name is `mcp__<plugin>__<name>`, confirmed by the T01 spike (Q1).
 const PLAN_TOOL_FULL_NAME = `mcp__window-todo__${PLAN_TOOL_SHORT_NAME}`
@@ -533,6 +552,40 @@ function scheduleObservation($: EngineInterface, turn: ObserverTurn): void {
   })
 }
 
+// Answers one call of the window tool: the change it asked for, then the list as it is now.
+async function answerWindowCall($: EngineInterface, input: unknown, agentId: string | undefined): Promise<string> {
+  if (agentId !== undefined) return 'Error: the window list belongs to the main conversation; a subagent cannot change it.'
+  const parsed = parseWindowInput(input)
+  if ('error' in parsed) return `Error: ${parsed.error}`
+  let reply = ''
+  if (parsed.op === 'add') {
+    await changeWindow($, list => {
+      const added = addItem(list, parsed.kind, parsed.title)
+      if ('error' in added) {
+        reply = `Error: ${added.error} Nothing was added.`
+
+        return list
+      }
+      reply = `Added ${added.id}.`
+
+      return added.list
+    })
+  } else if (parsed.op === 'done' || parsed.op === 'skip') {
+    let result: WindowResult | null = null
+    const ids = parsed.ids
+    const verb = parsed.op
+    await changeWindow($, list => {
+      result = verb === 'done' ? closeItems(list, ids) : skipItems(list, ids)
+
+      return result.list
+    })
+    reply = windowReply(verb, result)
+  }
+  await refreshStatus($)
+
+  return [reply, describeWindow(await currentWindow($))].filter(part => part !== '').join('\n')
+}
+
 export const register: Register = (on, options) => {
   // A missing value counts as on (D8).
   const enforceConfig = options.enforce !== false
@@ -566,6 +619,15 @@ export const register: Register = (on, options) => {
         // The name stays null: the gate and the instruction both fail open without the tool.
         $.ui.log(`window-todo: plan tool registration failed ${String(error)}`, { to: 'debug' })
       }
+      try {
+        await $.tool.register({
+          name: WINDOW_TOOL_SHORT_NAME,
+          description: WINDOW_TOOL_DESCRIPTION,
+          inputSchema: WINDOW_INPUT_SCHEMA,
+        })
+      } catch (error) {
+        $.ui.log(`window-todo: window tool registration failed ${String(error)}`, { to: 'debug' })
+      }
       await $.command.register({
         name: 'todo',
         description: 'Show the plan pane, clear the plan, or turn plan enforcement off or on',
@@ -591,7 +653,7 @@ export const register: Register = (on, options) => {
   // turn one (T01 Q2).
   on('tool.describe', async ($, e, next) => {
     const stored = await guard($, 'tool.describe', null as string | null, async () => (await read($, planTool)).name)
-    if (!isPlanTool(e.tool, stored)) return next(e)
+    if (!isPlanTool(e.tool, stored) && e.tool !== WINDOW_TOOL_FULL_NAME) return next(e)
 
     return { ...e, isDeferred: false }
   })
@@ -731,6 +793,24 @@ export const register: Register = (on, options) => {
 
   // The plan tool. The API serves a plugin's own tool only from a tool.call hook, so this one answers
   // every call to it and never reads `next`. The model reads the returned text as the tool result.
+  on('tool.call', { tool: 'mcp__window-todo__window' }, async ($, e) => {
+    const text = await guard($, 'window tool', 'Error: the window tool failed. Try again.', () =>
+      answerWindowCall($, e, e.agentId),
+    )
+
+    return { result: text }
+  })
+
+  // A question left only in the reply scrolls away: an answer that ends on one while the window
+  // list holds no open Q item is sent back once (after sirkitree/pinboard).
+  on('classic.Stop', async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.block || e.stop_hook_active || !asksUser(e.last_assistant_message ?? '')) return ran
+    const hasQuestion = await guard($, 'stop', true, async () => hasOpenQuestion(await currentWindow($)))
+
+    return hasQuestion ? ran : { ...ran, block: STOP_NUDGE }
+  })
+
   on('tool.call', { tool: 'mcp__window-todo__plan' }, async ($, e) => {
     const text = await guard($, 'plan tool', 'Error: the plan tool failed. Try again.', () =>
       answerPlanCall($, e, e.agentId),
