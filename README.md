@@ -7,7 +7,8 @@ A Claude Code mod with two lists in one pane:
    claude-mod-todo-list 0.3.1 as it is.
 2. **The window list.** Open items of this window, under the plan: tasks `T`, fixes `F`,
    questions to the user `Q`, waits on something outside `W`. Ids are numbered per kind and never
-   reused; a closed item stays, struck through; a skipped item moves to the bottom of the open
+   reused; a closed item stays, struck through, until a prune removes the closed ones; a skipped
+   item moves to the bottom of the open
    items with its id.
    The list is kept per session, so `/resume` brings it back. The status line counts the open
    items, for example `T2 F1 Q1`.
@@ -16,9 +17,9 @@ Three ways fill the window list:
 
 - **The observer.** After each answered main-loop turn a small model (`haiku`) reads the turn and
   the list, then closes, skips and adds items. «F1 can wait» in your message moves F1 down.
-- **The `window` tool.** Claude adds, closes and skips items itself; every call answers the list
+- **The `window` tool.** Claude adds, closes, skips and prunes items itself; every call answers the list
   as it is now.
-- **The command.** `/todo add <T|F|Q|W> <title>`, `/todo done <ids>`, `/todo skip <ids>`.
+- **The command.** `/todo add <T|F|Q|W> <title>`, `/todo done <ids>`, `/todo skip <ids>`, `/todo prune` (removes the closed items).
 
 **The Stop reminder.** When an answer ends on a question and the list has no open `Q` item, the
 turn is sent back once with a request to add it.

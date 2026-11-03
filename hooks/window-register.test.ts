@@ -89,6 +89,17 @@ test('/todo done closes, /todo skip moves down with the same id, unknown ids are
   expect(pane).toContain('Window')
 })
 
+test('/todo prune removes the closed items and a removed id is not reused', async ($, on) => {
+  const { statuses } = setup(on)
+  await run($, 'add W CI')
+  await run($, 'add F Bug')
+  await run($, 'done W1')
+  expect(await run($, 'prune')).toBe('Removed: W1.')
+  expect(statuses.at(-1)).toBe('F1')
+  expect(await drawPane($)).not.toContain('CI')
+  expect(await run($, 'add W Review')).toBe('Added W2 (wait).')
+})
+
 test('a closed id is not reused by a later add', async ($, on) => {
   setup(on)
   await run($, 'add W CI')

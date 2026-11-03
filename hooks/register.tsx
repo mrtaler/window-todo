@@ -32,6 +32,7 @@ import {
   hasOpenQuestion,
   KIND_NAMES,
   parseKind,
+  pruneDone,
   skipItems,
   windowLines,
   windowRowCount,
@@ -71,7 +72,7 @@ const LOG_LIMIT = 4000
 const ASK_TOOL = 'AskUserQuestion'
 const USAGE =
   'Usage: /todo (opens the pane) | /todo clear | /todo off | /todo on | /todo color <name|#hex|reset>' +
-  ' | /todo add <T|F|Q|W> <title> | /todo done <ids> | /todo skip <ids>'
+  ' | /todo add <T|F|Q|W> <title> | /todo done <ids> | /todo skip <ids> | /todo prune'
 const unknownColorText = (value: string): string =>
   `Unknown color "${value}". Use a name (red, green, yellow, blue, magenta, cyan, white, gray, claude, or a ...Bright variant) or #rrggbb. For orange, try claude.`
 const NOT_OWNER_TEXT =
@@ -248,6 +249,7 @@ async function runTodoCommand(
 
     return { text: `Plan pane opened.${tip}` }
   }
+  if (word === 'prune') return runWindowCommand($, 'prune', '')
   const windowCommand = /^(add|done|skip)(?:\s+|$)(.*)$/s.exec(raw)
   if (windowCommand !== null) return runWindowCommand($, (windowCommand[1] ?? '').toLowerCase(), windowCommand[2] ?? '')
   if (word === 'off' || word === 'on') {
@@ -263,8 +265,19 @@ async function runTodoCommand(
   return { text: 'Plan cleared.' }
 }
 
-// `/todo add <kind> <title>`, `/todo done <ids>` and `/todo skip <ids>` on the window list.
+// `/todo add <kind> <title>`, `/todo done <ids>`, `/todo skip <ids>` and `/todo prune` on the window list.
 async function runWindowCommand($: EngineInterface, verb: string, rest: string): Promise<{ text: string }> {
+  if (verb === 'prune') {
+    let pruned: WindowResult | null = null
+    await changeWindow($, list => {
+      pruned = pruneDone(list)
+
+      return pruned.list
+    })
+    await refreshStatus($)
+
+    return { text: windowReply(verb, pruned) }
+  }
   if (verb === 'add') {
     const [rawKind = '', ...words] = rest.trim().split(/\s+/)
     const kind = parseKind(rawKind)
@@ -301,7 +314,8 @@ async function runWindowCommand($: EngineInterface, verb: string, rest: string):
 const windowReply = (verb: string, result: WindowResult | null): string => {
   if (result === null) return 'Nothing was changed.'
   const parts: string[] = []
-  if (result.changed.length > 0) parts.push(`${verb === 'done' ? 'Closed' : 'Moved down'}: ${result.changed.join(', ')}.`)
+  const label = verb === 'done' ? 'Closed' : verb === 'prune' ? 'Removed' : 'Moved down'
+  if (result.changed.length > 0) parts.push(`${label}: ${result.changed.join(', ')}.`)
   if (result.unknown.length > 0) parts.push(`Not in the list: ${result.unknown.join(', ')}.`)
 
   return parts.length === 0 ? 'Nothing was changed.' : parts.join(' ')
@@ -580,6 +594,14 @@ async function answerWindowCall($: EngineInterface, input: unknown, agentId: str
       return result.list
     })
     reply = windowReply(verb, result)
+  } else if (parsed.op === 'prune') {
+    let pruned: WindowResult | null = null
+    await changeWindow($, list => {
+      pruned = pruneDone(list)
+
+      return pruned.list
+    })
+    reply = windowReply('prune', pruned)
   }
   await refreshStatus($)
 

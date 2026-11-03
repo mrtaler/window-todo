@@ -8,6 +8,7 @@ import {
   hasOpenQuestion,
   normaliseId,
   parseStoredWindow,
+  pruneDone,
   skipItems,
   windowLines,
   windowStatus,
@@ -47,6 +48,14 @@ test('a stored list keeps its counters, so ids continue after a resume', () => {
   expect(restored).not.toBeNull()
   const next = withItems([['W', 'Deploy']], restored ?? emptyWindow())
   expect(next.items.at(-1)?.id).toBe('W3')
+})
+
+test('pruneDone removes only the done items and keeps the counters', () => {
+  const list = closeItems(withItems([['T', 'One'], ['F', 'Two'], ['T', 'Three']]), ['T1', 'T2']).list
+  const result = pruneDone(list)
+  expect(result.changed).toEqual(['T1', 'T2'])
+  expect(ids(result.list)).toEqual(['F1'])
+  expect(withItems([['T', 'Four']], result.list).items.at(-1)?.id).toBe('T3')
 })
 
 test('«F1 can wait» moves F1 to the bottom with the same id and keeps it open', () => {

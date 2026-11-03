@@ -45,6 +45,15 @@ test('the window tool adds, skips and closes items with the same ids as /todo', 
   expect(logs).toEqual([])
 })
 
+test('the window tool prunes the done items and keeps the open ones', async ($, on) => {
+  setup(on)
+  await callTool($, { op: 'add', kind: 'T', title: 'Wire the store' })
+  await callTool($, { op: 'add', kind: 'F', title: 'Upload bypasses the toggle' })
+  await callTool($, { op: 'done', ids: ['T1'] })
+  expect(await callTool($, { op: 'prune' })).toBe('Removed: T1.\nF1 [open] Upload bypasses the toggle')
+  expect(await callTool($, { op: 'prune' })).toBe('Nothing was changed.\nF1 [open] Upload bypasses the toggle')
+})
+
 test('a bad call and a subagent call change nothing', async ($, on) => {
   setup(on)
   expect(await callTool($, { op: 'add', kind: 'Z', title: 't' })).toContain('Error: op add needs "kind"')

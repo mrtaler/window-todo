@@ -85,6 +85,14 @@ export const skipItems = (list: WindowList, rawIds: readonly string[]): WindowRe
   return { list: { ...list, items: [...rest, ...moved] }, changed: moved.map(item => item.id), unknown }
 }
 
+// Removes the done items, so a long window fits the pane again. `issued` is kept, so a removed
+// id is still never handed out again.
+export const pruneDone = (list: WindowList): WindowResult => {
+  const changed = list.items.filter(item => item.isDone).map(item => item.id)
+
+  return { list: { ...list, items: list.items.filter(item => !item.isDone) }, changed, unknown: [] }
+}
+
 export const openItems = (list: WindowList): WindowItem[] => list.items.filter(item => !item.isDone)
 
 export const hasOpenQuestion = (list: WindowList): boolean => openItems(list).some(item => item.kind === 'Q')
