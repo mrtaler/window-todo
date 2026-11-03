@@ -23,6 +23,19 @@ Three ways fill the window list:
 **The Stop reminder.** When an answer ends on a question and the list has no open `Q` item, the
 turn is sent back once with a request to add it.
 
+## Install
+
+The plugin ships in the local folder marketplace `<marketplace>`, whose source is the
+`claude-plugins` folder that holds this one:
+
+```shell
+claude plugin marketplace add <path-to-marketplace>
+claude plugin install window-todo@<marketplace> --scope user
+```
+
+Skip the first line if `claude plugin marketplace list` already shows `<marketplace>`.
+Restart Claude Code after installing.
+
 ## Development
 
 ```shell
