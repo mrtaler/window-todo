@@ -28,6 +28,17 @@ import type { TreeLine, TreeOptions } from './tree'
 import { addItem, closeItems, KIND_NAMES, parseKind, skipItems, windowLines, windowRowCount, windowStatus } from './window'
 import type { WindowList, WindowResult } from './window'
 import { changeWindow, currentWindow, forgetWindow, readWindow, sweepWindows } from './window-store'
+import {
+  applyObserverChange,
+  OBSERVER_EFFORT,
+  OBSERVER_MAX_TOKENS,
+  OBSERVER_MODEL,
+  OBSERVER_SYSTEM,
+  OBSERVER_TIMEOUT_MS,
+  observerPrompt,
+  parseObserverReply,
+} from './observer'
+import type { ObserverTurn } from './observer'
 
 // D4: the registered name is `mcp__<plugin>__<name>`, confirmed by the T01 spike (Q1).
 const PLAN_TOOL_FULL_NAME = `mcp__window-todo__${PLAN_TOOL_SHORT_NAME}`
@@ -477,6 +488,51 @@ async function loadSavedAccent($: EngineInterface): Promise<void> {
   })
 }
 
+// The observer's state outside the atoms: the user text of each running main-loop turn, the
+// answer of the last observed turn, a queue that runs one observation at a time, and a
+// generation that /clear and /resume bump so a reply arriving after them is dropped.
+const turnTexts = new Map<string, string>()
+let lastAnswer = ''
+let observerQueue: Promise<unknown> = Promise.resolve()
+let observerGeneration = 0
+
+// One observation: the small model reads the turn and the list, and its change is applied.
+// A reply that is missing or not a change leaves the list as it was.
+async function observeTurn($: EngineInterface, turn: ObserverTurn, generation: number): Promise<void> {
+  const list = await currentWindow($)
+  const reply = await $.model.complete({
+    model: OBSERVER_MODEL,
+    system: OBSERVER_SYSTEM,
+    prompt: observerPrompt(list, turn),
+    effort: OBSERVER_EFFORT,
+    maxTokens: OBSERVER_MAX_TOKENS,
+    timeoutMs: OBSERVER_TIMEOUT_MS,
+  })
+  if (!reply.isAnswered) {
+    debugLog($, `window-todo: observer got no reply (${reply.reason})`)
+
+    return
+  }
+  const change = parseObserverReply(reply.text)
+  if (change === null) {
+    debugLog($, `window-todo: observer reply is not a change: ${reply.text}`)
+
+    return
+  }
+  if (generation !== observerGeneration) return
+  await changeWindow($, current => applyObserverChange(current, change))
+  await refreshStatus($)
+}
+
+// Runs the observation from a timer, outside the hook, so the answer shows without waiting on
+// the model; the queue keeps two turns from racing over the list.
+function scheduleObservation($: EngineInterface, turn: ObserverTurn): void {
+  const generation = observerGeneration
+  $.clock.after(0, () => {
+    observerQueue = observerQueue.then(() => guard($, 'observer', undefined, () => observeTurn($, turn, generation)))
+  })
+}
+
 export const register: Register = (on, options) => {
   // A missing value counts as on (D8).
   const enforceConfig = options.enforce !== false
@@ -610,13 +666,27 @@ export const register: Register = (on, options) => {
     await guard($, 'turn.complete', undefined, () =>
       applyActivity($, { type: 'turnComplete', reason: e.reason, agentId: e.agentId }),
     )
+    if (e.agentId === undefined) {
+      const userText = turnTexts.get(e.turnId) ?? ''
+      turnTexts.delete(e.turnId)
+      if (e.reason === 'answer') {
+        const turn: ObserverTurn = { userText, answer: e.answer, previousAnswer: lastAnswer }
+        lastAnswer = e.answer
+        await guard($, 'observer schedule', undefined, () => scheduleObservation($, turn))
+      }
+    }
 
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
     // The next session (a /clear, or the one /resume opens) loads its own list on first use.
-    if (e.reason === 'clear' || e.reason === 'resume') await guard($, 'window forget', undefined, () => forgetWindow($))
+    if (e.reason === 'clear' || e.reason === 'resume') {
+      observerGeneration += 1
+      lastAnswer = ''
+      turnTexts.clear()
+      await guard($, 'window forget', undefined, () => forgetWindow($))
+    }
     if (e.reason === 'clear') {
       await guard($, 'session.end', undefined, () => applyActivity($, { type: 'sessionClear' }))
       await guard($, 'session.end', undefined, () => update($, dropShown, () => false))
@@ -718,6 +788,7 @@ export const register: Register = (on, options) => {
 
   // turn.start fires once per prompt of the main loop and not for subagents (T01 Q7).
   on('turn.start', async ($, e, next) => {
+    turnTexts.set(e.turnId, e.text)
     if ((await read($, accentOverride)) === null) await loadSavedAccent($)
     await guard($, 'turn.start', undefined, async () => {
       const current = await read($, plan)

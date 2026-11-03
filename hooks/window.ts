@@ -11,7 +11,7 @@ export const WINDOW_HEADER = 'Window'
 // What each kind stands for, in the words the model and the person see.
 export const KIND_NAMES: Readonly<Record<WindowKind, string>> = {
   T: 'task',
-  F: 'finding',
+  F: 'fix',
   Q: 'question',
   W: 'wait',
 }

@@ -64,7 +64,7 @@ const drawPane = async ($: Engine): Promise<string> =>
 test('/todo add hands out ids per kind and the status line counts open items', async ($, on) => {
   const { logs, statuses } = setup(on)
   expect(await run($, 'add T Write the store')).toBe('Added T1 (task).')
-  expect(await run($, 'add f Upload bypasses the toggle')).toBe('Added F1 (finding).')
+  expect(await run($, 'add f Upload bypasses the toggle')).toBe('Added F1 (fix).')
   expect(await run($, 'add T Wire the observer')).toBe('Added T2 (task).')
   expect(statuses.at(-1)).toBe('T2 F1')
   expect(logs).toEqual([])
@@ -127,9 +127,9 @@ test('session.start loads the stored list of the session and drops other stale o
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/tmp', isInteractive: false, surface: 'terminal' })
   expect(await drawPane($)).toContain('Kept finding')
-  expect(await run($, 'add F Next')).toBe('Added F4 (finding).')
+  expect(await run($, 'add F Next')).toBe('Added F4 (fix).')
   // A swept session resumes with an empty list; a fresh one keeps its counters.
-  for (const [id, expected] of [['old', 'Added F1 (finding).'], ['fresh', 'Added F4 (finding).']] as const) {
+  for (const [id, expected] of [['old', 'Added F1 (fix).'], ['fresh', 'Added F4 (fix).']] as const) {
     await resume($, session.id)
     session.id = id
     expect(await run($, 'add F Next')).toBe(expected)
