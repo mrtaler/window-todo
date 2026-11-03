@@ -34,7 +34,15 @@ claude plugin install window-todo@<marketplace> --scope user
 ```
 
 Skip the first line if `claude plugin marketplace list` already shows `<marketplace>`.
-Restart Claude Code after installing.
+Restart Claude Code after installing. The plugin loads in place from this folder, so later edits
+take effect at the next session start or after `/reload-plugins`.
+
+Two options are set with `/plugin configure window-todo@<marketplace>` in Claude Code, or
+with `--config KEY=VALUE` on install:
+
+- `enforce` (default `true`): block state-changing tools until a plan exists.
+- `accentColor` (default `claude`): theme key or color for the current step, the progress bar and
+  the running state, for example `magenta`, `green` or `#c084fc`.
 
 ## Development
 
