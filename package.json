@@ -10,7 +10,8 @@
     "validate": "claude plugin validate .",
     "test:claude": "claude plugin test .",
     "test:codex": "node --test codex/test.cjs",
-    "test": "npm run test:claude && npm run test:codex",
+    "test:release": "node --test scripts/update-version.test.cjs",
+    "test": "npm run test:claude && npm run test:codex && npm run test:release",
     "check": "npm run build:check && npm run validate && npm run typecheck && npm run test"
   },
   "devDependencies": {

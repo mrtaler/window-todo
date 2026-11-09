@@ -143,6 +143,17 @@ Commit generated `codex/core/*.js` together with changes to their TypeScript sou
 build check detects stale generated files. Codex tests cover the actual stdio MCP protocol,
 multi-process updates, restart persistence, session isolation, hooks and launcher quoting.
 
+## Releases
+
+Conventional Commits on `master` drive semantic-release. The release workflow runs the
+checks, generates `CHANGELOG.md`, then uses `@semantic-release/exec` to run
+`node scripts/update-version.js ${nextRelease.version}`. That prepare step updates both
+`.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`. `@semantic-release/git`
+commits those manifests and the changelog as `chore(release): <version> [skip ci]`.
+
+Release tags use semantic-release's default `v<version>` format. Leave version numbers
+and changelog entries to this workflow.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for the three mods this one is built from.
