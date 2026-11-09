@@ -21,6 +21,10 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+    # Empty when the commits since the last tag do not warrant a release.
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,6 +33,7 @@ jobs:
         with:
           node-version: lts/*
       - name: Release
+        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
@@ -42,3 +47,44 @@ jobs:
           -p @semantic-release/github@12.0.10
           -p conventional-changelog-conventionalcommits@9.3.1
           semantic-release
+
+  # Points the catalogue entry in github.com/mrtaler/agent-plugins at the new release tag through a
+  # pull request opened by the mrtaler-release-bot GitHub App: the built-in GITHUB_TOKEN cannot write
+  # to another repository, and a pull request it opened would not trigger the catalogue's checks.
+  catalogue:
+    needs: release
+    if: needs.release.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: mrtaler
+          repositories: agent-plugins
+      - uses: actions/checkout@v7
+        with:
+          repository: mrtaler/agent-plugins
+          token: ${{ steps.app-token.outputs.token }}
+      - name: Point the catalogue at the release tag
+        env:
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          for catalogue in .claude-plugin/marketplace.json .agents/plugins/marketplace.json; do
+            [ -f "$catalogue" ] || continue
+            jq --arg ref "$RELEASE_TAG" \
+              '(.plugins[] | select(.name == "window-todo") | .source) |= (if type == "object" then del(.sha) + {ref: $ref} else . end)' \
+              "$catalogue" > "$catalogue.tmp"
+            mv "$catalogue.tmp" "$catalogue"
+          done
+      - uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: release/window-todo
+          delete-branch: true
+          sign-commits: true
+          commit-message: "feat: window-todo ${{ needs.release.outputs.version }}"
+          title: "feat: window-todo ${{ needs.release.outputs.version }}"
+          body: "Points window-todo at tag ${{ needs.release.outputs.tag }}."
