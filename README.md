@@ -26,17 +26,17 @@ turn is sent back once with a request to add it.
 
 ## Install
 
-The plugin ships in the local folder marketplace `<marketplace>`, whose source is the
-`claude-plugins` folder that holds this one:
+Add a marketplace that lists this plugin, then install it at user scope:
 
 ```shell
-claude plugin marketplace add <path-to-marketplace>
+claude plugin marketplace add <marketplace-source>
 claude plugin install window-todo@<marketplace> --scope user
 ```
 
-Skip the first line if `claude plugin marketplace list` already shows `<marketplace>`.
-Restart Claude Code after installing. The plugin loads in place from this folder, so later edits
-take effect at the next session start or after `/reload-plugins`.
+`<marketplace-source>` is a GitHub `owner/repo`, a git URL or a local folder. Skip the first line
+if `claude plugin marketplace list` already shows the marketplace. Restart Claude Code after
+installing. From a local folder marketplace the plugin loads in place, so later edits take effect
+at the next session start or after `/reload-plugins`.
 
 Two options are set with `/plugin configure window-todo@<marketplace>` in Claude Code, or
 with `--config KEY=VALUE` on install:
