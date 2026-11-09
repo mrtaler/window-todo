@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "window-todo": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/codex/mcp.cjs"]
+    }
+  }
+}

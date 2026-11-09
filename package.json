@@ -2,10 +2,16 @@
   "name": "window-todo",
   "private": true,
   "scripts": {
+    "build": "node codex/build.cjs",
+    "build:check": "node codex/build.cjs --check",
+    "demo": "node codex/demo.cjs",
+    "codex": "node codex/launch.cjs",
     "typecheck": "tsc -p tsconfig.json",
     "validate": "claude plugin validate .",
-    "test": "claude plugin test .",
-    "check": "npm run validate && npm run typecheck && npm run test"
+    "test:claude": "claude plugin test .",
+    "test:codex": "node --test codex/test.cjs",
+    "test": "npm run test:claude && npm run test:codex",
+    "check": "npm run build:check && npm run validate && npm run typecheck && npm run test"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
