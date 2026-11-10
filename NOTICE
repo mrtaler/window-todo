@@ -1,0 +1,13 @@
+window-todo combines code from three MIT-licensed mods:
+
+- claude-mod-todo-list 0.3.1 by 0xnicholasy
+  https://github.com/0xnicholasy/claude-mod-todo-list
+  The plan layer: the plan tool, the pane and status line, the gate, and their tests.
+
+- claude-todo-list by Chienlung Huang and other contributors
+  https://github.com/cldotdev/claude-todo-list
+  The observer loop on a small model and the per-session store of the window list.
+
+- pinboard by Jerad Bitner
+  https://github.com/sirkitree/pinboard
+  The Stop reminder for a question the window list does not carry.

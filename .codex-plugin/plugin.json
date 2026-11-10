@@ -1,0 +1,90 @@
+{
+  "name": "window-todo",
+  "version": "0.7.0",
+  "description": "A shared plan tree and per-conversation T/F/Q/W list, with a companion terminal pane for Codex.",
+  "author": {
+    "name": "mrTaler"
+  },
+  "license": "MIT",
+  "keywords": [
+    "plan",
+    "todo",
+    "tasks",
+    "companion-pane"
+  ],
+  "skills": "./dist/codex/skills",
+  "mcpServers": "./dist/codex/mcp.json",
+  "hooks": {
+    "hooks": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
+            }
+          ]
+        }
+      ],
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
+            }
+          ]
+        }
+      ],
+      "PreToolUse": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
+            }
+          ]
+        }
+      ],
+      "PostToolUse": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
+            }
+          ]
+        }
+      ],
+      "SessionEnd": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "interface": {
+    "displayName": "Window Todo",
+    "shortDescription": "Keep the plan and open items beside your conversation",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ]
+  }
+}
