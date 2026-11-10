@@ -17,9 +17,10 @@
     "test:release": "node --test scripts/update-version.test.cjs",
     "test:build": "node --test scripts/build.spec.cjs",
     "test:recovery": "node --test scripts/recover-release.spec.cjs",
+    "test:publish": "node --test scripts/publish-package.spec.cjs",
     "test:package": "node scripts/test-package.js",
     "pretest": "npm run build",
-    "test": "npm run test:shared && npm run test:claude && npm run test:codex && npm run test:release && npm run test:build && npm run test:recovery",
+    "test": "npm run test:shared && npm run test:claude && npm run test:codex && npm run test:release && npm run test:build && npm run test:recovery && npm run test:publish",
     "check": "npm run typecheck && npm test && npm run validate && npm run test:package"
   },
   "devDependencies": {
