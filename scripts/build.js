@@ -11,21 +11,46 @@ function write(filename, content) {
   fs.writeFileSync(filename, content)
 }
 
-function jsImports(text, tests = false) {
-  return text.replace(/from (["'])(\.[^"']+)\1/g, (_match, quote, specifier) => {
-    const extension = path.extname(specifier) ? '' : '.js'
-    const target = tests ? '../../dist/shared/' + path.basename(specifier) + extension : specifier + extension
-    return `from ${quote}${target}${quote}`
-  })
+function jsImports(text, directory, tests = false) {
+  const factory = ts.factory
+  const file = ts.createSourceFile('runtime.js', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const result = ts.transform(file, [context => {
+    function literal(node) {
+      if (!node || (!ts.isStringLiteral(node) && !ts.isNoSubstitutionTemplateLiteral(node))) return node
+      if (!node.text.startsWith('.')) return node
+      const extension = path.extname(node.text) ? '' : '.js'
+      let target = node.text + extension
+      if (tests) {
+        const source = path.resolve(root, directory, node.text)
+        const runtime = path.join(output, path.relative(root, source)) + extension
+        target = path.relative(path.join(testOutput, directory), runtime).split(path.sep).join('/')
+        if (!target.startsWith('.')) target = './' + target
+      }
+      return factory.createStringLiteral(target)
+    }
+    function visit(node) {
+      if (ts.isImportDeclaration(node)) return factory.updateImportDeclaration(node, node.modifiers, node.importClause, literal(node.moduleSpecifier), node.attributes)
+      if (ts.isExportDeclaration(node) && node.moduleSpecifier) return factory.updateExportDeclaration(node, node.modifiers, node.isTypeOnly, node.exportClause, literal(node.moduleSpecifier), node.attributes)
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        if (ts.isTemplateExpression(node.arguments[0]) && node.arguments[0].head.text.startsWith('.')) throw new Error('Use a literal path for relative dynamic imports in runtime modules.')
+        return factory.updateCallExpression(node, node.expression, node.typeArguments, [literal(node.arguments[0]), ...node.arguments.slice(1)])
+      }
+      return ts.visitEachChild(node, visit, context)
+    }
+    return node => ts.visitNode(node, visit)
+  }])
+  const rewritten = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed }).printFile(result.transformed[0])
+  result.dispose()
+  return rewritten
 }
 
 // Canonical state types live in shared/. Claude's SDK needs their atom bindings inlined.
-function stateDeclaration() {
-  const config = ts.readConfigFile(path.join(root, 'tsconfig.json'), ts.sys.readFile)
-  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
+function stateDeclaration(base = root) {
+  const config = ts.readConfigFile(path.join(base, 'tsconfig.json'), ts.sys.readFile)
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, base)
   const program = ts.createProgram(parsed.fileNames, parsed.options)
   const checker = program.getTypeChecker()
-  const file = program.getSourceFile(path.join(root, 'claude/state.d.ts'))
+  const file = program.getSourceFile(path.join(base, 'claude/state.d.ts'))
   const declaration = file.statements.find(node => ts.isModuleDeclaration(node))
   const state = declaration.body.statements.find(node => ts.isInterfaceDeclaration(node))
   const plugin = state.members.find(node => node.name.text === 'window-todo')
@@ -43,8 +68,11 @@ function stateDeclaration() {
       if (members.every(member => member.flags & ts.TypeFlags.BooleanLike)) return 'boolean'
       return members.map(member => inline(member, depth + 1)).join(' | ')
     }
+    if (checker.isTupleType(type)) throw new Error('Tuple types are not supported in Claude atom schemas.')
     if (checker.isArrayType(type)) return `Array<${inline(checker.getTypeArguments(type)[0], depth + 1)}>`
     if (type.flags & ts.TypeFlags.Object) {
+      if (checker.getIndexInfosOfType(type).length) throw new Error('Index signatures are not supported in Claude atom schemas.')
+      if (type.getCallSignatures().length || type.getConstructSignatures().length) throw new Error('Callable types are not supported in Claude atom schemas.')
       return '{ ' + checker.getPropertiesOfType(type).map(property => {
         const isOptional = !!(property.flags & ts.SymbolFlags.Optional)
         const propertyType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration || property.declarations[0])
@@ -54,7 +82,9 @@ function stateDeclaration() {
     throw new Error('Unsupported Claude state type: ' + checker.typeToString(type))
   }
   const schema = inline(checker.getTypeAtLocation(plugin.type))
-  return `// Generated from shared types and Claude state bindings.\ndeclare module 'claude-code' { interface PluginState { 'window-todo': ${schema} } }\n`
+  const shared = program.getSourceFile(path.join(base, 'shared/types.ts'))
+  const exports = shared.statements.filter(node => ts.isTypeAliasDeclaration(node)).map(node => `export type ${node.name.text} = ${inline(checker.getTypeAtLocation(node.type))};`).join('\n')
+  return `// Generated from shared types and Claude state bindings.\n${exports}\ndeclare module 'claude-code' { interface PluginState { 'window-todo': ${schema} } }\n`
 }
 
 function build() {
@@ -73,7 +103,7 @@ function build() {
         fileName: name,
       }).outputText
       const destination = path.join(tests ? testOutput : output, directory, name.replace(/\.tsx?$/, '.js'))
-      write(destination, jsImports(compiled, tests))
+      write(destination, jsImports(compiled, directory, tests))
     }
   }
   write(path.join(output, 'claude/state.d.ts'), stateDeclaration())
@@ -90,4 +120,4 @@ function build() {
 }
 
 if (require.main === module) build()
-module.exports = { build }
+module.exports = { build, jsImports, stateDeclaration }

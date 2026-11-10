@@ -1,3 +1,4 @@
+require('./runtime.cjs').ensureRuntime({ host: process })
 const store = require('./state.cjs')
 const { buildTree, statusLine } = require('../shared/tree.js')
 const { windowLines, windowStatus } = require('../shared/window.js')

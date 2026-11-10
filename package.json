@@ -1,20 +1,25 @@
 {
   "name": "window-todo",
   "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "node scripts/build.js",
     "pack": "node scripts/package.js",
     "demo": "node dist/codex/demo.cjs",
     "codex": "node dist/codex/launch.cjs",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.tests.json",
     "validate": "claude plugin validate .",
     "test:claude": "claude plugin test .",
     "test:shared": "node --test .test-build/shared/*.spec.js",
     "test:codex": "node --test codex/test.spec.cjs",
     "test:release": "node --test scripts/update-version.test.cjs",
+    "test:build": "node --test scripts/build.spec.cjs",
     "test:package": "node scripts/test-package.js",
-    "test": "npm run test:shared && npm run test:claude && npm run test:codex && npm run test:release",
-    "check": "npm run typecheck && npm run build && npm run validate && npm run test && npm run test:package"
+    "pretest": "npm run build",
+    "test": "npm run test:shared && npm run test:claude && npm run test:codex && npm run test:release && npm run test:build",
+    "check": "npm run typecheck && npm test && npm run validate && npm run test:package"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

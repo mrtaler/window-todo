@@ -10,12 +10,34 @@ const { call } = require(path.join(adapter, 'service.cjs'))
 const { handle } = require(path.join(adapter, 'hook.cjs'))
 const { render } = require(path.join(adapter, 'panel.cjs'))
 const { prepare } = require(path.join(adapter, 'launch.cjs'))
+const { runtimeError } = require(path.join(adapter, 'runtime.cjs'))
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'window-todo-test-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   return { directory: dir, env: { WINDOW_TODO_STATE_DIR: dir } }
 }
+
+test('entrypoints explain unsupported Node versions before loading the shared ESM', () => {
+  assert.equal(runtimeError('22.12.0'), null)
+  assert.equal(runtimeError('24.5.0'), null)
+  assert.match(runtimeError('22.11.0'), /22.12/)
+  const vm = require('node:vm')
+  for (const [name, expectedCode] of [['mcp.cjs', 1], ['hook.cjs', 0]]) {
+    let stdout = '', stderr = '', code
+    const exit = Symbol('exit')
+    const host = { versions: { node: '22.11.0' }, stdout: { write: text => { stdout += text } }, stderr: { write: text => { stderr += text } }, exit: value => { code = value; throw exit } }
+    try {
+      vm.runInNewContext(fs.readFileSync(path.join(adapter, name), 'utf8'), { process: host, require: module => {
+        assert.equal(module, './runtime.cjs', 'The unsupported runtime must not load ESM dependencies')
+        return require(path.join(adapter, 'runtime.cjs'))
+      } })
+    } catch (error) { assert.equal(error, exit) }
+    assert.equal(code, expectedCode)
+    assert.match(stderr, /current version is 22.11.0/)
+    assert.equal(stdout, name === 'hook.cjs' ? '{}\n' : '')
+  }
+})
 
 function mcp(rows, env) {
   return new Promise((resolve, reject) => {

@@ -1,3 +1,4 @@
+require('./runtime.cjs').ensureRuntime({ host: process })
 const path = require('node:path')
 const crypto = require('node:crypto')
 const child = require('node:child_process')

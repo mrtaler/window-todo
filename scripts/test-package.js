@@ -13,14 +13,37 @@ try {
   for (const directory of ['shared', 'claude', 'codex', 'node_modules']) assert.ok(!fs.existsSync(path.join(temporary, directory)))
   assert.ok(fs.existsSync(path.join(temporary, 'dist/shared/plan.js')))
   const expectedVersion = JSON.parse(fs.readFileSync(path.join(temporary, '.claude-plugin/plugin.json'))).version
-  assert.equal(JSON.parse(fs.readFileSync(path.join(temporary, '.codex-plugin/plugin.json'))).version, expectedVersion)
+  const codexManifest = JSON.parse(fs.readFileSync(path.join(temporary, '.codex-plugin/plugin.json')))
+  assert.equal(codexManifest.version, expectedVersion)
+  function packagePath(relative) {
+    assert.equal(typeof relative, 'string')
+    const resolved = path.resolve(temporary, relative.replaceAll('${PLUGIN_ROOT}', temporary))
+    assert.ok(resolved === temporary || resolved.startsWith(temporary + path.sep), `Path escapes plugin root: ${relative}`)
+    assert.ok(fs.existsSync(resolved), `Missing plugin path: ${relative}`)
+    return resolved
+  }
+  const skills = packagePath(codexManifest.skills)
+  assert.ok(fs.statSync(skills).isDirectory())
+  assert.ok(fs.readdirSync(skills).some(name => fs.existsSync(path.join(skills, name, 'SKILL.md'))))
+  const mcpConfig = JSON.parse(fs.readFileSync(packagePath(codexManifest.mcpServers)))
+  const server = mcpConfig.mcpServers['window-todo']
+  const workingDirectory = packagePath(server.cwd || '.')
+  const args = server.args.map(arg => arg.replaceAll('${PLUGIN_ROOT}', temporary))
+  for (const arg of args.filter(arg => arg.startsWith('./') || arg.startsWith('../'))) packagePath(path.relative(temporary, path.resolve(workingDirectory, arg)))
+  for (const groups of Object.values(codexManifest.hooks.hooks)) {
+    for (const group of groups) for (const hook of group.hooks) {
+      const referenced = [...hook.command.matchAll(/\$\{PLUGIN_ROOT\}(\/[^"'\s]+)/g)]
+      assert.ok(referenced.length > 0, 'Hook command must reference an installed plugin script.')
+      for (const reference of referenced) packagePath('.' + reference[1])
+    }
+  }
   const requests = [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } },
     { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'window', arguments: { sessionId: 'package-smoke', op: 'add', kind: 'T', title: 'Installed package works' } } },
   ]
-  const mcp = spawnSync(process.execPath, [path.join(temporary, 'dist/codex/mcp.cjs')], {
+  const mcp = spawnSync(server.command, args, {
     input: requests.map(request => JSON.stringify(request)).join('\n') + '\n', encoding: 'utf8',
-    cwd: temporary, env: { ...process.env, WINDOW_TODO_STATE_DIR: path.join(temporary, '.state') },
+    cwd: workingDirectory, env: { ...process.env, WINDOW_TODO_STATE_DIR: path.join(temporary, '.state') },
   })
   assert.equal(mcp.status, 0, mcp.stderr)
   const replies = mcp.stdout.trim().split('\n').map(line => JSON.parse(line))

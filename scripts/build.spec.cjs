@@ -1,0 +1,36 @@
+const assert = require('node:assert/strict')
+const { test } = require('node:test')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { jsImports, stateDeclaration } = require('./build.js')
+
+test('runtime imports are rewritten structurally, including bare and dynamic imports', () => {
+  const source = `import './plan'; export { x } from './window'; const m = import('./tree'); const untouched = "from './example'";`
+  const result = jsImports(source, 'shared')
+  assert.match(result, /import "\.\/plan\.js"/)
+  assert.match(result, /from "\.\/window\.js"/)
+  assert.match(result, /import\("\.\/tree\.js"\)/)
+  assert.ok(result.includes("from './example'"))
+  assert.match(jsImports("import '../claude/fit'", 'shared', true), /\.\.\/\.\.\/dist\/claude\/fit\.js/)
+  assert.throws(() => jsImports('import(`./${name}`)', 'shared'), /literal path/)
+})
+
+test('Claude contracts reject index signatures and tuples instead of erasing their shape', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'window-todo-schema-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  fs.mkdirSync(path.join(root, 'shared'))
+  fs.mkdirSync(path.join(root, 'claude'))
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, types: [], skipLibCheck: true }, include: ['shared/*.ts', 'claude/*.d.ts'] }))
+  fs.writeFileSync(path.join(root, 'claude/state.d.ts'), `import type { Bad } from '../shared/types'; declare module 'claude-code' { interface PluginState { 'window-todo': { data: Bad } } }`)
+  fs.writeFileSync(path.join(root, 'shared/types.ts'), 'export type Bad = Record<string, number>')
+  assert.throws(() => stateDeclaration(root), /Index signatures/)
+  fs.writeFileSync(path.join(root, 'shared/types.ts'), 'export type Bad = [string, number]')
+  assert.throws(() => stateDeclaration(root), /Tuple types/)
+})
+
+test('built Claude contracts keep the exported shared type names', () => {
+  const result = stateDeclaration()
+  for (const name of ['Plan', 'PlanNode', 'PlanStatus', 'WindowList', 'ActivityState']) assert.match(result, new RegExp('export type ' + name + ' ='))
+  assert.match(result, /declare module 'claude-code'/)
+})

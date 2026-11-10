@@ -1,3 +1,4 @@
+require('./runtime.cjs').ensureRuntime({ host: process })
 const readline = require('node:readline')
 const { tools, call } = require('./service.cjs')
 const { version } = require('../../.codex-plugin/plugin.json')

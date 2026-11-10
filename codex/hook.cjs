@@ -1,3 +1,4 @@
+require('./runtime.cjs').ensureRuntime({ host: process, failOpen: true })
 const store = require('./state.cjs')
 const { reduceActivity } = require('../shared/activity.js')
 const { hasUnfinished } = require('../shared/plan.js')
