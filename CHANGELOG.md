@@ -1,3 +1,9 @@
+## [0.7.0](https://github.com/mrtaler/window-todo/compare/v0.6.0...v0.7.0) (2026-11-10)
+
+### Features
+
+* **release:** publish the built package to a release branch instead of master ([9ec6586](https://github.com/mrtaler/window-todo/commit/9ec658632dbc4cfcb5564e541d753b9a3c264573))
+
 ## [0.6.0](https://github.com/mrtaler/window-todo/compare/v0.5.0...v0.6.0) (2026-11-10)
 
 ### Features
