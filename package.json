@@ -13,7 +13,7 @@
     "validate": "claude plugin validate .",
     "test:claude": "claude plugin test .",
     "test:shared": "node --test .test-build/shared/*.spec.js",
-    "test:codex": "node --test codex/test.spec.cjs",
+    "test:codex": "node --test codex/*.spec.cjs",
     "test:release": "node --test scripts/update-version.test.cjs",
     "test:build": "node --test scripts/build.spec.cjs",
     "test:recovery": "node --test scripts/recover-release.spec.cjs",

@@ -14,7 +14,7 @@ async function main() {
     await call('plan', { sessionId: 'demo', op: 'update', updates: [{ id: '1', status: 'completed' }, { id: '2', status: 'in_progress' }] }, options)
     await call('window', { sessionId: 'demo', op: 'add', kind: 'Q', title: 'Choose the next step' }, options)
     await call('window', { sessionId: 'demo', op: 'add', kind: 'W', title: 'Wait for an external review' }, options)
-    console.log(render(store.read('demo', dir)))
+    console.log(render(store.read('demo', dir), 56, 30, { color: Boolean(process.stdout.isTTY) && !Object.hasOwn(process.env, 'NO_COLOR') }))
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1 })
