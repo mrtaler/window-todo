@@ -29,4 +29,4 @@ function archive() {
 }
 
 if (require.main === module) archive()
-module.exports = { assemble, archive }
+module.exports = { entries, assemble, archive }

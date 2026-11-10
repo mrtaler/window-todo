@@ -31,27 +31,51 @@ function releaseNotes(changelog, version) {
 function command(binary, args, options = {}) {
   const result = spawnSync(binary, args, { encoding: 'utf8', timeout: 120000, ...options })
   if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(`${binary} failed: ${result.stderr || result.stdout}`)
-  return result.stdout.trim()
+  if (result.status !== 0) throw new Error(`${binary} failed: ${result.stderr || result.stdout || `exit status ${result.status}`}`)
+  return (result.stdout || '').trim()
+}
+
+const manifestFiles = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json']
+const botConfig = ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com']
+
+function checkManifests(manifests, version) {
+  if (manifests.length !== manifestFiles.length || manifests.some(manifest => manifest?.name !== 'window-todo' || manifest.version !== version)) {
+    throw new Error('The existing tag and plugin manifests do not match; no publication performed.')
+  }
+}
+
+// A stable tag on master whose manifests carry its version. origin/master is refreshed first:
+// semantic-release pushes the release commit by URL, which leaves the tracking ref behind.
+function verifiedRelease(tag) {
+  const version = releaseVersion(tag)
+  command('git', ['fetch', '--no-tags', 'origin', '+refs/heads/master:refs/remotes/origin/master'])
+  const commit = command('git', ['rev-parse', `${tag}^{commit}`])
+  command('git', ['merge-base', '--is-ancestor', commit, 'origin/master'])
+  checkManifests(manifestFiles.map(file => JSON.parse(command('git', ['show', `${tag}:${file}`]))), version)
+  return { version, commit }
+}
+
+// Builds the immutable tagged sources with their own lockfile and build script, never a newer working tree.
+function buildRelease(tag, temporary) {
+  const source = path.join(temporary, 'source')
+  fs.mkdirSync(source)
+  const gitArchive = path.join(temporary, 'tag.tar')
+  command('git', ['archive', '--format=tar', '--output', gitArchive, tag])
+  command('tar', ['-xf', gitArchive, '-C', source])
+  for (const args of [['ci', '--no-audit', '--no-fund'], ['run', 'build']]) command('npm', args, { cwd: source, stdio: 'inherit', timeout: 600000 })
+  return source
 }
 
 async function recover(tag) {
-  const version = releaseVersion(tag)
+  const { version } = verifiedRelease(tag)
   const repo = process.env.GITHUB_REPOSITORY || 'mrtaler/window-todo'
-  const commit = command('git', ['rev-parse', `${tag}^{commit}`])
-  command('git', ['merge-base', '--is-ancestor', commit, 'origin/master'])
-  for (const file of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json']) {
-    const manifest = JSON.parse(command('git', ['show', `${tag}:${file}`]))
-    if (manifest.name !== 'window-todo' || manifest.version !== version) throw new Error('The existing tag and plugin manifests do not match; no publication performed.')
-  }
-  command('git', ['cat-file', '-e', `${tag}:dist/shared/plan.js`])
   const notes = releaseNotes(command('git', ['show', `${tag}:CHANGELOG.md`]), version)
   const noteRef = `refs/notes/semantic-release-${tag}`
   const remoteNote = command('git', ['ls-remote', '--refs', 'origin', noteRef])
   if (remoteNote) command('git', ['fetch', 'origin', `${noteRef}:${noteRef}`])
   const currentNote = spawnSync('git', ['notes', '--ref', noteRef, 'show', tag], { encoding: 'utf8' })
   if (currentNote.status !== 0) {
-    command('git', ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'notes', '--ref', noteRef, 'add', '-m', '{"channels":[null]}', tag])
+    command('git', [...botConfig, 'notes', '--ref', noteRef, 'add', '-m', '{"channels":[null]}', tag])
   } else if (!JSON.parse(currentNote.stdout).channels?.includes(null)) {
     throw new Error('The Git note describes another release channel; recovery will not overwrite it.')
   }
@@ -64,14 +88,10 @@ async function recover(tag) {
   }
   if (!pushed) throw new Error('Git note was not published.')
 
-  // Package the immutable release tree, never a newer working branch or a rebuilt version.
+  // Package the immutable release tree, never a newer working branch or a recalculated version.
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'window-todo-recover-'))
   try {
-    const source = path.join(temporary, 'source')
-    fs.mkdirSync(source)
-    const gitArchive = path.join(temporary, 'tag.tar')
-    command('git', ['archive', '--format=tar', '--output', gitArchive, tag])
-    command('tar', ['-xf', gitArchive, '-C', source])
+    const source = buildRelease(tag, temporary)
     command(process.execPath, [path.join(source, 'scripts/package.js')], { cwd: source })
     const archive = path.join(source, 'artifacts', `window-todo-${version}.tar.gz`)
     if (!fs.existsSync(archive)) throw new Error('The tagged package script did not create the expected release archive.')
@@ -95,4 +115,4 @@ if (require.main === module) {
   if (process.argv[2] === '--notes-failure-log') tag = notesFailureTag(fs.readFileSync(process.argv[3], 'utf8'))
   recover(tag).catch(error => { console.error(error.message); process.exitCode = 1 })
 }
-module.exports = { releaseVersion, notesFailureTag, releaseNotes }
+module.exports = { releaseVersion, notesFailureTag, releaseNotes, command, manifestFiles, botConfig, checkManifests, verifiedRelease, buildRelease }

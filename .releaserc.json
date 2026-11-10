@@ -14,7 +14,7 @@
     [
       "@semantic-release/git",
       {
-        "assets": [".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "CHANGELOG.md", "dist/**"],
+        "assets": [".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "CHANGELOG.md"],
         "message": "chore(release): ${nextRelease.version} [skip ci]"
       }
     ],

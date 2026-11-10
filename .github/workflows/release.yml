@@ -32,6 +32,7 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag || steps.recover.outputs.tag }}
       version: ${{ steps.release.outputs.version || steps.recover.outputs.version }}
+      package_tag: ${{ steps.package.outputs.package_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,6 +67,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/recover-release.js --notes-failure-log "$RUNNER_TEMP/window-todo-release.log"
+      # Builds the released tag again from its own sources and commits only the package to the release branch.
+      - name: Publish the package branch
+        id: package
+        if: ${{ steps.release.outputs.tag != '' || steps.recover.outputs.tag != '' }}
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag || steps.recover.outputs.tag }}
+        run: node scripts/publish-package.js "$RELEASE_TAG"
 
   recovery:
     needs: validate
@@ -76,6 +84,7 @@ jobs:
     outputs:
       tag: ${{ steps.recover.outputs.tag }}
       version: ${{ steps.recover.outputs.version }}
+      package_tag: ${{ steps.package.outputs.package_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -83,19 +92,26 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
+      - name: Install the Claude package test engine
+        run: npm install -g @anthropic-ai/claude-code@2.1.321
       - name: Complete publication of the existing tag
         id: recover
         env:
           RECOVER_TAG: ${{ inputs.recover_tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/recover-release.js
+      - name: Publish the package branch
+        id: package
+        env:
+          RELEASE_TAG: ${{ steps.recover.outputs.tag }}
+        run: node scripts/publish-package.js "$RELEASE_TAG"
 
-  # Points the catalogue entry in github.com/mrtaler/agent-plugins at the new release tag through a
+  # Points the catalogue entry in github.com/mrtaler/agent-plugins at the new package tag through a
   # pull request opened by the mrtaler-release-bot GitHub App: the built-in GITHUB_TOKEN cannot write
   # to another repository, and a pull request it opened would not trigger the catalogue's checks.
   catalogue:
     needs: [release, recovery]
-    if: ${{ always() && (needs.release.outputs.tag != '' || needs.recovery.outputs.tag != '') }}
+    if: ${{ always() && (needs.release.outputs.package_tag != '' || needs.recovery.outputs.package_tag != '') }}
     runs-on: ubuntu-latest
     permissions: {}
     steps:
@@ -110,13 +126,13 @@ jobs:
         with:
           repository: mrtaler/agent-plugins
           token: ${{ steps.app-token.outputs.token }}
-      - name: Point the catalogue at the release tag
+      - name: Point the catalogue at the package tag
         env:
-          RELEASE_TAG: ${{ needs.release.outputs.tag || needs.recovery.outputs.tag }}
+          PACKAGE_TAG: ${{ needs.release.outputs.package_tag || needs.recovery.outputs.package_tag }}
         run: |
           for catalogue in .claude-plugin/marketplace.json .agents/plugins/marketplace.json; do
             [ -f "$catalogue" ] || continue
-            jq --arg ref "$RELEASE_TAG" \
+            jq --arg ref "$PACKAGE_TAG" \
               '(.plugins[] | select(.name == "window-todo") | .source) |= (if type == "object" then del(.sha) + {ref: $ref} else . end)' \
               "$catalogue" > "$catalogue.tmp"
             mv "$catalogue.tmp" "$catalogue"
@@ -128,5 +144,5 @@ jobs:
           delete-branch: true
           sign-commits: true
           commit-message: "feat: window-todo ${{ needs.release.outputs.version || needs.recovery.outputs.version }}"
-          title: "feat: window-todo ${{ needs.release.outputs.version || needs.recovery.outputs.version }}"
-          body: "Points window-todo at tag ${{ needs.release.outputs.tag || needs.recovery.outputs.tag }}."
+          title: "feat: window-todo ${{ needs.release.outputs.version || needs.recovery.outputs.version }} (${{ needs.release.outputs.package_tag || needs.recovery.outputs.package_tag }})"
+          body: "Points window-todo at package tag ${{ needs.release.outputs.package_tag || needs.recovery.outputs.package_tag }}: the built package of release ${{ needs.release.outputs.tag || needs.recovery.outputs.tag }}, published on the release branch of mrtaler/window-todo."
