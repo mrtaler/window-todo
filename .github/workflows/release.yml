@@ -3,6 +3,12 @@ name: release
 on:
   push:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      recover_tag:
+        description: Existing stable tag whose publication should be completed
+        required: true
+        type: string
 
 concurrency:
   group: release
@@ -16,6 +22,7 @@ jobs:
 
   release:
     needs: validate
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,8 +30,8 @@ jobs:
       pull-requests: write
     # Empty when the commits since the last tag do not warrant a release.
     outputs:
-      tag: ${{ steps.release.outputs.tag }}
-      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag || steps.recover.outputs.tag }}
+      version: ${{ steps.release.outputs.version || steps.recover.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,26 +45,57 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code@2.1.321
       - name: Release
         id: release
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          npx --yes
-          -p semantic-release@25.0.9
-          -p @semantic-release/commit-analyzer@13.0.1
-          -p @semantic-release/release-notes-generator@14.1.1
-          -p @semantic-release/changelog@7.0.0
-          -p @semantic-release/exec@7.1.0
-          -p @semantic-release/git@11.0.1
-          -p @semantic-release/github@12.0.10
-          -p conventional-changelog-conventionalcommits@9.3.1
-          semantic-release
+        run: |
+          set -o pipefail
+          npx --yes \
+          -p semantic-release@25.0.9 \
+          -p @semantic-release/commit-analyzer@13.0.1 \
+          -p @semantic-release/release-notes-generator@14.1.1 \
+          -p @semantic-release/changelog@7.0.0 \
+          -p @semantic-release/exec@7.1.0 \
+          -p @semantic-release/git@11.0.1 \
+          -p @semantic-release/github@12.0.10 \
+          -p conventional-changelog-conventionalcommits@9.3.1 \
+          semantic-release 2>&1 | tee "$RUNNER_TEMP/window-todo-release.log"
+      - name: Recover a post-tag Git notes push failure
+        id: recover
+        if: ${{ !cancelled() && steps.release.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/recover-release.js --notes-failure-log "$RUNNER_TEMP/window-todo-release.log"
+
+  recovery:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.recover.outputs.tag }}
+      version: ${{ steps.recover.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      - name: Complete publication of the existing tag
+        id: recover
+        env:
+          RECOVER_TAG: ${{ inputs.recover_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/recover-release.js
 
   # Points the catalogue entry in github.com/mrtaler/agent-plugins at the new release tag through a
   # pull request opened by the mrtaler-release-bot GitHub App: the built-in GITHUB_TOKEN cannot write
   # to another repository, and a pull request it opened would not trigger the catalogue's checks.
   catalogue:
-    needs: release
-    if: needs.release.outputs.tag != ''
+    needs: [release, recovery]
+    if: ${{ always() && (needs.release.outputs.tag != '' || needs.recovery.outputs.tag != '') }}
     runs-on: ubuntu-latest
     permissions: {}
     steps:
@@ -74,7 +112,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
       - name: Point the catalogue at the release tag
         env:
-          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag || needs.recovery.outputs.tag }}
         run: |
           for catalogue in .claude-plugin/marketplace.json .agents/plugins/marketplace.json; do
             [ -f "$catalogue" ] || continue
@@ -89,6 +127,6 @@ jobs:
           branch: release/window-todo
           delete-branch: true
           sign-commits: true
-          commit-message: "feat: window-todo ${{ needs.release.outputs.version }}"
-          title: "feat: window-todo ${{ needs.release.outputs.version }}"
-          body: "Points window-todo at tag ${{ needs.release.outputs.tag }}."
+          commit-message: "feat: window-todo ${{ needs.release.outputs.version || needs.recovery.outputs.version }}"
+          title: "feat: window-todo ${{ needs.release.outputs.version || needs.recovery.outputs.version }}"
+          body: "Points window-todo at tag ${{ needs.release.outputs.tag || needs.recovery.outputs.tag }}."

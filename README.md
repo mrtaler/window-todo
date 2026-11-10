@@ -200,6 +200,16 @@ warrant one.
 Release tags use semantic-release's default `v<version>` format. Leave version numbers
 and changelog entries to this workflow.
 
+If GitHub rejects Git notes after a release tag has already been pushed, the workflow retries
+the note and completes publication from that immutable tagged tree. It does not recalculate a
+version, move a tag or overwrite an existing release asset. Unrelated release failures remain
+failures. An existing draft release requires operator review.
+
+To finish a previously interrupted publication, run the `release` workflow manually with
+`recover_tag` set to the existing stable tag. The recovery job verifies both tagged manifests
+and the tag's ancestry on `master`, restores the archive and runs the existing catalog update
+job. It packages the tagged runtime rather than rebuilding newer source code.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for the three mods this one is built from.
