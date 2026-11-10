@@ -55,6 +55,18 @@ function verifiedRelease(tag) {
   return { version, commit }
 }
 
+// The tagged package script prints the archive path relative to its tree as its last line:
+// window-todo-<version>.tar.gz on older tags, the npm-format window-todo-<version>.tgz since.
+function packagedArchive(output, source, version) {
+  const printed = output.trim().split('\n').at(-1).trim()
+  const archive = path.resolve(source, printed)
+  const names = [`window-todo-${version}.tgz`, `window-todo-${version}.tar.gz`]
+  if (path.dirname(archive) !== path.join(source, 'artifacts') || !names.includes(path.basename(archive))) {
+    throw new Error(`The tagged package script reported an unexpected archive: ${printed}`)
+  }
+  return archive
+}
+
 // Builds the immutable tagged sources with their own lockfile and build script, never a newer working tree.
 function buildRelease(tag, temporary) {
   const source = path.join(temporary, 'source')
@@ -92,8 +104,7 @@ async function recover(tag) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'window-todo-recover-'))
   try {
     const source = buildRelease(tag, temporary)
-    command(process.execPath, [path.join(source, 'scripts/package.js')], { cwd: source })
-    const archive = path.join(source, 'artifacts', `window-todo-${version}.tar.gz`)
+    const archive = packagedArchive(command(process.execPath, [path.join(source, 'scripts/package.js')], { cwd: source }), source, version)
     if (!fs.existsSync(archive)) throw new Error('The tagged package script did not create the expected release archive.')
     const notesFile = path.join(temporary, 'notes.md')
     fs.writeFileSync(notesFile, notes)
@@ -104,7 +115,8 @@ async function recover(tag) {
       if (!release.assets.some(asset => asset.name === path.basename(archive))) command('gh', ['release', 'upload', tag, archive, '--repo', repo])
       console.log(release.url)
     } else if (/release not found/i.test(existing.stderr)) {
-      console.log(command('gh', ['release', 'create', tag, `${archive}#Window Todo plugin package`, '--repo', repo, '--verify-tag', '--title', tag, '--notes-file', notesFile]))
+      const label = archive.endsWith('.tgz') ? 'Window Todo package for Codex (npm format)' : 'Window Todo plugin package'
+      console.log(command('gh', ['release', 'create', tag, `${archive}#${label}`, '--repo', repo, '--verify-tag', '--title', tag, '--notes-file', notesFile]))
     } else throw new Error(existing.stderr || 'Unable to inspect the GitHub release.')
     if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\nversion=${version}\n`)
   } finally { fs.rmSync(temporary, { recursive: true, force: true }) }
@@ -115,4 +127,4 @@ if (require.main === module) {
   if (process.argv[2] === '--notes-failure-log') tag = notesFailureTag(fs.readFileSync(process.argv[3], 'utf8'))
   recover(tag).catch(error => { console.error(error.message); process.exitCode = 1 })
 }
-module.exports = { releaseVersion, notesFailureTag, releaseNotes, command, manifestFiles, botConfig, checkManifests, verifiedRelease, buildRelease }
+module.exports = { releaseVersion, notesFailureTag, releaseNotes, packagedArchive, command, manifestFiles, botConfig, checkManifests, verifiedRelease, buildRelease }
