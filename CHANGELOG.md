@@ -1,3 +1,9 @@
+## [0.10.0](https://github.com/mrtaler/window-todo/compare/v0.9.0...v0.10.0) (2026-11-10)
+
+### Features
+
+* **claude:** show the window-todo pane in tmux beside Claude Code ([c33f1dd](https://github.com/mrtaler/window-todo/commit/c33f1dd72d495f5b25fa64dd1830bcb2fc299843))
+
 ## [0.9.0](https://github.com/mrtaler/window-todo/compare/v0.8.0...v0.9.0) (2026-11-10)
 
 ### Features
