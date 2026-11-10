@@ -1,3 +1,9 @@
+## [0.9.0](https://github.com/mrtaler/window-todo/compare/v0.8.0...v0.9.0) (2026-11-10)
+
+### Features
+
+* **codex:** bind resume --last to the latest thread and pre-approve the window-todo tools ([b5bc249](https://github.com/mrtaler/window-todo/commit/b5bc249c843616010488408ba6943b03b501561d))
+
 ## [0.8.0](https://github.com/mrtaler/window-todo/compare/v0.7.0...v0.8.0) (2026-11-10)
 
 ### Features
