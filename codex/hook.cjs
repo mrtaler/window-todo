@@ -24,7 +24,7 @@ async function handle(event, env = process.env) {
     const tool = event.tool_name || event.toolName || 'tool'
     const state = store.read(sessionId, dir)
     // Enforcement is opt-in for this first Codex adapter; keep a failed hook fail-open.
-    if (kind === 'pretooluse' && env.WINDOW_TODO_ENFORCE === 'true' && /(?:^|\.)(?:apply_patch|exec_command|exec)$/.test(tool) && !hasUnfinished(state.plan)) {
+    if (kind === 'pretooluse' && env.WINDOW_TODO_ENFORCE === 'true' && /^(?:Bash|apply_patch|exec_command)$/.test(tool) && !hasUnfinished(state.plan)) {
       const gated = await store.change(sessionId, current => {
         if (hasUnfinished(current.plan)) return false
         current.gateDenies = (current.gateDenies || 0) + 1

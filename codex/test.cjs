@@ -96,10 +96,11 @@ test('hooks use the launcher session, remain advisory by default and allow plann
   const env = { ...f.env, WINDOW_TODO_SESSION: 'launcher' }
   const start = await handle({ hook_event_name: 'SessionStart', session_id: 'native' }, env)
   assert.match(start.hookSpecificOutput.additionalContext, /launcher/)
-  const event = { hook_event_name: 'PreToolUse', session_id: 'native', tool_name: 'functions.apply_patch' }
+  const event = { hook_event_name: 'PreToolUse', session_id: 'native', tool_name: 'Bash' }
   assert.deepEqual(await handle(event, env), {})
   const enforced = { ...env, WINDOW_TODO_ENFORCE: 'true' }
-  assert.equal((await handle(event, enforced)).hookSpecificOutput.permissionDecision, 'deny')
+  for (const tool_name of ['Bash', 'apply_patch', 'exec_command']) assert.equal((await handle({ ...event, tool_name }, enforced)).hookSpecificOutput.permissionDecision, 'deny', tool_name)
+  assert.deepEqual(await handle({ ...event, tool_name: 'mcp__window-todo__plan' }, enforced), {})
   await call('plan', { op: 'set', title: 'Task', nodes: [{ title: 'Edit' }] }, { ...f, env })
   assert.deepEqual(await handle(event, enforced), {})
   assert.deepEqual(await handle({ ...event, agent_id: 'child' }, enforced), {})
@@ -109,7 +110,7 @@ test('hooks use the launcher session, remain advisory by default and allow plann
 test('an unavailable plan cannot trap the session in an endless gate loop', async t => {
   const f = fixture(t)
   const env = { ...f.env, WINDOW_TODO_SESSION: 'gate', WINDOW_TODO_ENFORCE: 'true' }
-  const event = { hook_event_name: 'PreToolUse', tool_name: 'exec_command' }
+  const event = { hook_event_name: 'PreToolUse', tool_name: 'Bash' }
   for (let index = 0; index < 3; index++) assert.equal((await handle(event, env)).hookSpecificOutput.permissionDecision, 'deny')
   assert.deepEqual(await handle(event, env), {})
   await handle({ hook_event_name: 'UserPromptSubmit' }, env)
