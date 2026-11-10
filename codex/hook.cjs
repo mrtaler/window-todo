@@ -1,7 +1,7 @@
 const store = require('./state.cjs')
-const { reduceActivity } = require('./core/activity')
-const { hasUnfinished } = require('./core/plan')
-const { clean } = require('./core/sanitize')
+const { reduceActivity } = require('../shared/activity.js')
+const { hasUnfinished } = require('../shared/plan.js')
+const { clean } = require('../shared/sanitize.js')
 
 function instructions(sessionId) {
   return `window-todo sessionId: ${sessionId}. Use the window-todo plan and window MCP tools with this sessionId. Keep the task plan current and record open tasks T, fixes F, questions Q and external waits W. Close answered questions and completed items. When using the companion launcher, omit sessionId to use its session instead. Pure Q&A needs no plan.`

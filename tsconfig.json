@@ -4,7 +4,7 @@
     "lib": [
       "es2023"
     ],
-    "types": [],
+    "types": ["node"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -17,8 +17,8 @@
     "jsxFragmentFactory": "Fragment"
   },
   "include": [
-    "vendor/claude-code/claude-code.d.ts",
-    "hooks/**/*",
-    "types/**/*"
+    "claude/vendor/claude-code.d.ts",
+    "claude/**/*",
+    "shared/**/*"
   ]
 }

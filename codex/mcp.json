@@ -2,7 +2,7 @@
   "mcpServers": {
     "window-todo": {
       "command": "node",
-      "args": ["./codex/mcp.cjs"],
+      "args": ["./dist/codex/mcp.cjs"],
       "cwd": "."
     }
   }

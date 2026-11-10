@@ -20,3 +20,9 @@ jobs:
       - name: Install the Claude test engine
         run: npm install -g @anthropic-ai/claude-code@2.1.321
       - run: npm run check
+      - run: npm run pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: window-todo-package
+          path: artifacts/window-todo-*.tar.gz
+          if-no-files-found: error

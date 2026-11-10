@@ -1,7 +1,7 @@
 const store = require('./state.cjs')
-const { buildTree, statusLine } = require('./core/tree')
-const { windowLines, windowStatus } = require('./core/window')
-const { clean } = require('./core/sanitize')
+const { buildTree, statusLine } = require('../shared/tree.js')
+const { windowLines, windowStatus } = require('../shared/window.js')
+const { clean } = require('../shared/sanitize.js')
 
 function render(state, width = 56, height = 30) {
   const status = [statusLine(state.plan, state.activity), windowStatus(state.window)].filter(Boolean).join(' · ')

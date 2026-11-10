@@ -12,8 +12,8 @@
     "tasks",
     "companion-pane"
   ],
-  "skills": "./codex/skills",
-  "mcpServers": "./codex/mcp.json",
+  "skills": "./dist/codex/skills",
+  "mcpServers": "./dist/codex/mcp.json",
   "hooks": {
     "hooks": {
       "SessionStart": [
@@ -21,7 +21,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "node \"${PLUGIN_ROOT}/codex/hook.cjs\""
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
             }
           ]
         }
@@ -31,7 +31,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "node \"${PLUGIN_ROOT}/codex/hook.cjs\""
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
             }
           ]
         }
@@ -41,7 +41,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "node \"${PLUGIN_ROOT}/codex/hook.cjs\""
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
             }
           ]
         }
@@ -51,7 +51,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "node \"${PLUGIN_ROOT}/codex/hook.cjs\""
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
             }
           ]
         }
@@ -61,7 +61,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "node \"${PLUGIN_ROOT}/codex/hook.cjs\""
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
             }
           ]
         }
@@ -71,7 +71,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "node \"${PLUGIN_ROOT}/codex/hook.cjs\""
+              "command": "node \"${PLUGIN_ROOT}/dist/codex/hook.cjs\""
             }
           ]
         }
