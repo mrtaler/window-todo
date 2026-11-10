@@ -3,9 +3,10 @@ const store = require('./state.cjs')
 const { reduceActivity } = require('../shared/activity.js')
 const { hasUnfinished } = require('../shared/plan.js')
 const { clean } = require('../shared/sanitize.js')
+const binding = require('./binding.cjs')
 
 function instructions(sessionId) {
-  return `window-todo sessionId: ${sessionId}. Use the window-todo plan and window MCP tools with this sessionId. Keep the task plan current and record open tasks T, fixes F, questions Q and external waits W. Close answered questions and completed items. When using the companion launcher, omit sessionId to use its session instead. Pure Q&A needs no plan.`
+  return `window-todo sessionId: ${sessionId}. Use the window-todo plan and window MCP tools with this sessionId. Keep the task plan current and record open tasks T, fixes F, questions Q and external waits W. Close answered questions and completed items. Only omit sessionId when WINDOW_TODO_SESSION is set for a legacy list. Pure Q&A needs no plan.`
 }
 
 async function handle(event, env = process.env) {
@@ -19,6 +20,9 @@ async function handle(event, env = process.env) {
       state.activity = reduceActivity(state.activity, { type: 'turnStart' }, Date.now())
       state.gateDenies = 0
     }, dir)
+    if (kind === 'sessionstart') {
+      if (env.WINDOW_TODO_PANEL_BINDING) binding.bind(env.WINDOW_TODO_PANEL_BINDING, sessionId, env)
+    }
     return { hookSpecificOutput: { hookEventName: eventName, additionalContext: instructions(sessionId) } }
   }
   if (kind === 'pretooluse' || kind === 'posttooluse') {

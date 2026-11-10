@@ -110,24 +110,63 @@ From a checkout or an installed copy of this plugin:
 node dist/codex/launch.cjs
 ```
 
-The launcher runs Codex on the left and the live plan/list on the right, inside one tmux
-window. It gives both processes the same `WINDOW_TODO_SESSION` and registers the local MCP
-server for that invocation. It leaves the user's Codex config file untouched. The launcher
-uses an embedded app-server so its environment also reaches installed plugin hooks.
+The launcher creates the tmux panes from the calling shell, before Codex starts. Codex runs
+on the left and the plan/list on the right. A local `SessionStart` hook gives the waiting
+companion the native thread ID through a private file; it does not open terminal windows.
+The companion follows thread changes, restores a resumed thread's list, and exits when its
+Codex process exits. The launcher registers its MCP server and local binding hook for that
+invocation, leaving the user's Codex config file untouched. It uses an embedded app-server
+so its environment reaches the hooks.
 
-Install tmux separately if necessary (`brew install tmux` on macOS). In tmux, switch panes
-with `Ctrl+B` followed by an arrow. To use an existing terminal application's split panes
+To use the usual `codex` command, put a function in your shell configuration. Replace the
+checkout path below with your built checkout or installed plugin path:
+
+```shell
+codex() { node "$HOME/Projects/github/mrtaler/window-todo/dist/codex/launch.cjs" "$@"; }
+```
+
+Reload the shell configuration, then use `codex`, `codex resume --last`, or
+`codex -c 'model_reasoning_effort="high"'`. All caller options are forwarded. Help,
+administrative commands and non-interactive commands run Codex directly, without tmux.
+The companion is a terminal process; this adapter does not add a pane inside Codex's UI.
+The terminal pane preserves the shared colors, bold and dim text, and strikethrough for
+closed items. Set `NO_COLOR` to disable styling. Output redirected to a file stays plain.
+
+The companion has a local command prompt. Focus it with `Ctrl+A`, then the right arrow,
+and enter `/todo prune` to remove completed list entries or `/todo clear` to empty the
+plan and the entire list. `/todo show` reports counts and `/todo help` lists the commands.
+These local operations update only the bound conversation and do not call a model.
+Item numbers remain issued after cleanup, so removed IDs are never reused.
+
+The bundled `todo` skill provides the same cleanup requests through Codex's MCP tools:
+invoke `$todo prune` or `$todo clear` in the Codex composer. For a user installation,
+copy `dist/codex/skills/todo/SKILL.md` to `~/.codex/skills/todo/SKILL.md` (or the equivalent
+location under your configured Codex home). `/todo` belongs to the companion prompt;
+this plugin does not register it as a native Codex slash command.
+
+Install tmux separately if necessary (`brew install tmux` on macOS). The launcher's tmux
+prefix is `Ctrl+A`, so `Ctrl+B` reaches Codex. Switch panes with `Ctrl+A`, release it, then
+press an arrow or the Latin `o` key. The status line identifies the active pane as Codex
+or Window Todo. With an explicit `resume <thread-id>`, the companion reads that thread's
+saved list before the first hook runs. To use an existing terminal application's split panes
 instead, print the two commands and run one in each split:
 
 ```shell
 node dist/codex/launch.cjs --print
 ```
 
-The launcher can register the MCP server before the plugin is installed, but lifecycle hooks
-and skill discovery are available only after plugin installation. Tool updates still appear
-in the companion pane. Built-in Codex plans are not mirrored automatically in this version.
+The launcher supplies the binding hook and MCP server before plugin installation; the
+installed plugin adds skill discovery and the remaining activity hooks. Built-in Codex
+plans are not mirrored automatically in this version.
 
-The first launch prints a list session ID. To reuse that list while resuming a Codex thread:
+Normal launches use the native Codex thread ID, so resuming needs no separate list ID:
+
+```shell
+node dist/codex/launch.cjs resume --last
+```
+
+For a list created by the older launcher with a separate list-session ID, explicit legacy
+binding remains available:
 
 ```shell
 node dist/codex/launch.cjs --session <list-session-id> -- resume <codex-thread-id>

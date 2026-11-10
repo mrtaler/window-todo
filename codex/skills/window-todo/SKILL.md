@@ -4,8 +4,9 @@ description: Maintain the window-todo plan and open task, fix, question and wait
 ---
 
 Use the window-todo MCP `plan` and `window` tools. If the session-start hook supplied a
-`sessionId`, pass it on every call; when running through the companion launcher,
-its `WINDOW_TODO_SESSION` identifies the list and `sessionId` may be omitted.
+`sessionId`, pass it on every call. The companion follows the native thread ID.
+Only for an explicit legacy launcher binding, `WINDOW_TODO_SESSION` identifies the
+list and `sessionId` may be omitted.
 Never use another conversation's session ID.
 
 For work requiring a plan, call `plan` with `op: set` and a short title and nodes.
