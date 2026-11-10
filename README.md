@@ -148,8 +148,11 @@ this plugin does not register it as a native Codex slash command.
 Install tmux separately if necessary (`brew install tmux` on macOS). The launcher's tmux
 prefix is `Ctrl+A`, so `Ctrl+B` reaches Codex. Switch panes with `Ctrl+A`, release it, then
 press an arrow or the Latin `o` key. The status line identifies the active pane as Codex
-or Window Todo. With an explicit `resume <thread-id>`, the companion reads that thread's
-saved list before the first hook runs. To use an existing terminal application's split panes
+or Window Todo. With `resume <thread-id>` or `resume --last`, the companion reads the
+saved list before the first hook runs. For `--last`, the launcher reads the most recent
+eligible thread from Codex's local database and passes that same explicit ID to Codex.
+If that lookup is unavailable, the session-start hook remains the fallback.
+To use an existing terminal application's split panes
 instead, print the two commands and run one in each split:
 
 ```shell

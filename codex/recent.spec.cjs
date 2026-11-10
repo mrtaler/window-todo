@@ -1,0 +1,30 @@
+const assert = require('node:assert/strict')
+const { test } = require('node:test')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { DatabaseSync } = require('node:sqlite')
+const { prepare } = require('../dist/codex/launch.cjs')
+
+test('resume --last initializes the same explicit thread for Codex and its pane without a hook', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'window-todo-recent-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const db = new DatabaseSync(path.join(dir, 'state_5.sqlite'))
+  db.exec('CREATE TABLE threads(id TEXT, cwd TEXT, source TEXT, archived INTEGER, updated_at INTEGER, created_at INTEGER, updated_at_ms INTEGER)')
+  const add = db.prepare('INSERT INTO threads VALUES(?,?,?,?,?,?,?)')
+  const first = '01a1c378-832e-7533-ae12-76515fc53817'
+  const other = '01a1c0ac-1763-7003-be74-5a84fb5c5b9b'
+  add.run(first, '/project', 'cli', 0, 1, 1, 1000)
+  add.run(other, '/other', 'cli', 0, 2, 2, 2000)
+  add.run('01a1c378-832e-7533-ae12-76515fc53818', '/project', 'exec', 0, 3, 3, 3000)
+  add.run('01a1c378-832e-7533-ae12-76515fc53819', '/project', 'cli', 1, 4, 4, 4000)
+  db.close()
+  const env = { CODEX_HOME: dir }
+  const setup = prepare(['-C', '/project', 'resume', '--last'], env)
+  assert.equal(setup.initialThreadId, first)
+  assert.equal(setup.environment.WINDOW_TODO_INITIAL_THREAD, first)
+  assert.equal(setup.codexArgs.at(-1), first)
+  assert.ok(!setup.codexArgs.includes('--last'))
+  assert.equal(prepare(['-C', '/project', 'resume', '--last', '--all'], env).initialThreadId, other)
+  assert.equal(prepare(['-C', '/project', 'resume', '--last', '--include-non-interactive'], env).initialThreadId, '01a1c378-832e-7533-ae12-76515fc53818')
+})
