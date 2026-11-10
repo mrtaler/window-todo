@@ -59,6 +59,44 @@ Three ways fill the window list:
 **The Stop reminder.** When an answer ends on a question and the list has no open `Q` item, the
 turn is sent back once with a request to add it.
 
+### Terminal pane (tmux)
+
+For Claude Code in its normal terminal mode the plan can live in a tmux pane of its own: Claude
+on the left with its own scrollback, the plan and window list on the right, scrolling on its own.
+From a checkout or the installed plugin folder (Node.js 22.12 or later and tmux):
+
+```shell
+node claude/launch.cjs            # or: npm run claude -- [claude options]
+```
+
+Claude options are forwarded (`--model`, `--resume <id>`, `--continue`, ...). The launcher picks
+the session id (`--session-id`) unless one is resumed, sets `WINDOW_TODO_PANE=1` for the mod and
+builds `dist/` when it is missing. Only with that variable set does the mod write the session's
+plan, list and activity to the state file the Codex pane reads (see the Codex state directory
+below), and the pane inside Claude does not open unasked. A `/clear` or `/resume` moves the pane
+to the new session. `--print-commands` prints the two commands for terminal splits of your own;
+`-p`, `--help` and Claude's subcommands run Claude directly. A shell function makes it the usual
+`claude`:
+
+```shell
+claude() { node "<plugin-folder>/claude/launch.cjs" "$@"; }
+```
+
+The tmux prefix is `Ctrl+A`; `Ctrl+A` then an arrow switches panes. Mouse mode is on: the wheel
+scrolls Claude's history and a click focuses a pane (hold Shift, or Option in iTerm2, to select
+text). Keys in the pane:
+
+| Key | Does |
+|---|---|
+| `↑` `↓` (`k` `j`) | select a window item; scroll on the Plan page |
+| `Space` (`x`) | mark the selected item done |
+| `s` | move it down («can wait») |
+| `Tab`, `0` `1` `2` `3` | pages: all, plan, window list, activity |
+| `/` | a command: `/todo done <ids>`, `/todo skip <ids>`, `/todo prune`, `/todo show` |
+
+A change made in the pane waits in `<state>.inbox.json` until the mod applies it (within two
+seconds, or at the next prompt) and shows at once, marked as waiting. The plan is view-only.
+
 ### Install
 
 Add a marketplace that lists this plugin, then install it at user scope:
@@ -133,9 +171,10 @@ The companion is a terminal process; this adapter does not add a pane inside Cod
 The terminal pane preserves the shared colors, bold and dim text, and strikethrough for
 closed items. Set `NO_COLOR` to disable styling. Output redirected to a file stays plain.
 
-The companion has a local command prompt. Focus it with `Ctrl+A`, then the right arrow,
-and enter `/todo prune` to remove completed list entries or `/todo clear` to empty the
-plan and the entire list. `/todo show` reports counts and `/todo help` lists the commands.
+The companion takes the same keys as the Claude pane (see the table above). Focus it with
+`Ctrl+A`, then the right arrow, press `/` and enter `/todo prune` to remove completed list
+entries or `/todo clear` to empty the plan and the entire list. `/todo show` reports counts
+and `/todo help` lists the commands.
 These local operations update only the bound conversation and do not call a model.
 Item numbers remain issued after cleanup, so removed IDs are never reused.
 
@@ -186,7 +225,7 @@ share one global list across conversations.
 | Capability | Claude Code | Codex adapter |
 |---|---|---|
 | Plan tree and T/F/Q/W operations | Native tools | MCP tools, shared reducers |
-| Pane | Inside Claude | Companion process in a terminal split |
+| Pane | Inside Claude, or a tmux pane (`claude/launch.cjs`) | Companion process in a terminal split |
 | Persistence | Claude plugin store | Per-session local files |
 | Automatic observer | Host model call using Haiku | Explicit model tool updates |
 | Activity | Claude events | Bundled Codex command hooks |

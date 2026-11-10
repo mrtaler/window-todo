@@ -56,6 +56,8 @@ import {
   WINDOW_TOOL_SHORT_NAME,
 } from '../shared/window-tool'
 import { WINDOW_TOOL_FULL_NAME } from './tool-names'
+import { drainInbox, INBOX_POLL_MS, mirrorBehind, mirrorTarget, publishMirror } from './mirror'
+import type { MirrorSnapshot } from './mirror'
 
 // D4: the registered name is `mcp__<plugin>__<name>`, confirmed by the T01 spike (Q1).
 const PLAN_TOOL_FULL_NAME = `mcp__window-todo__${PLAN_TOOL_SHORT_NAME}`
@@ -134,6 +136,38 @@ async function refreshStatus($: EngineInterface): Promise<void> {
   const [p, a, w] = await Promise.all([read($, plan), read($, activity), readWindow($)])
   const parts = [statusLine(p, a), windowStatus(w)].filter((part): part is string => part !== undefined)
   $.ui.status(parts.length === 0 ? undefined : parts.join(' · '))
+  // Every change to the plan, the activity or the window list redraws the status line, so this is
+  // the one place the terminal pane's file mirror is kept up to date. Off unless WINDOW_TODO_PANE=1.
+  await publishMirror($, () => snapshotOf($))
+}
+
+// The plan and the activity as they are now, for the file mirror (its atoms are read in this file).
+async function snapshotOf($: EngineInterface): Promise<MirrorSnapshot> {
+  const [p, a] = await Promise.all([read($, plan), read($, activity)])
+
+  return { plan: p, activity: a }
+}
+
+// Applies the changes the terminal pane left in its inbox (marked done, skipped, pruned).
+async function applyInbox($: EngineInterface): Promise<void> {
+  if (await drainInbox($)) await refreshStatus($)
+}
+
+// Between turns nothing else reads the inbox, so a timer does; it also moves the pane to the new
+// session after a /clear. One per loaded module: a hot reload cancels the old module's timers and
+// the new module starts its own.
+let inboxPoll: { cancel: () => void } | null = null
+
+async function pollPane($: EngineInterface): Promise<void> {
+  if (await drainInbox($)) await refreshStatus($)
+  else if (await mirrorBehind($)) await refreshStatus($)
+}
+
+function startInboxPoll($: EngineInterface): void {
+  if (inboxPoll !== null) return
+  inboxPoll = $.clock.every(INBOX_POLL_MS, () => {
+    void guard($, 'inbox poll', undefined, () => pollPane($))
+  })
 }
 
 // The plan tree, then the window section below a blank row. The window section is kept whole
@@ -619,6 +653,13 @@ export const register: Register = (on, options) => {
       await currentWindow($)
       await refreshStatus($)
     })
+    // Under the tmux launcher the terminal pane shows the plan, so the pane inside Claude does not
+    // open unasked (`/todo` still opens it).
+    const externalPane = (await mirrorTarget($)) !== null
+    if (externalPane) {
+      startInboxPoll($)
+      await guard($, 'inbox', undefined, () => applyInbox($))
+    }
     await guard($, 'session.start', undefined, async () => {
       try {
         const registered = await $.tool.register({
@@ -655,7 +696,7 @@ export const register: Register = (on, options) => {
       // The pane opens unasked only on the terminal under a person at the prompt. The host leaves
       // an unasked open undrawn below 110 columns, so the first prompt (an open the person asked
       // for, placed at any width) opens it again if it is still unplaced.
-      if (e.isInteractive && e.surface === 'terminal') {
+      if (e.isInteractive && e.surface === 'terminal' && !externalPane) {
         await update($, firstPromptOpen, () => 'armed')
         await openPane($)
       }
@@ -748,6 +789,8 @@ export const register: Register = (on, options) => {
       applyActivity($, { type: 'turnComplete', reason: e.reason, agentId: e.agentId }),
     )
     if (e.agentId === undefined) {
+      // The end of a turn: the terminal pane gets the final state now rather than after the interval.
+      await publishMirror($, () => snapshotOf($), true)
       const userText = turnTexts.get(e.turnId) ?? ''
       turnTexts.delete(e.turnId)
       if (e.reason === 'answer') {
@@ -876,6 +919,7 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    await guard($, 'inbox', undefined, () => applyInbox($))
     await guard($, 'first prompt open', undefined, async () => {
       if ((await read($, firstPromptOpen)) !== 'armed') return
       await update($, firstPromptOpen, () => 'done')
@@ -899,6 +943,7 @@ export const register: Register = (on, options) => {
       await currentWindow($)
       await refreshStatus($)
     })
+    await guard($, 'inbox', undefined, () => applyInbox($))
     // D12: the plan rides each new prompt as a user-role row the model reads (the person does not
     // see it as typed), which also resyncs ids after a compaction.
     await guard($, 'plan context', undefined, async () => {

@@ -5,12 +5,8 @@ const child = require('node:child_process')
 const store = require('./state.cjs')
 const binding = require('./binding.cjs')
 const recent = require('./recent.cjs')
-
-const quote = text => "'" + String(text).replaceAll("'", "'\"'\"'") + "'"
-
-function command(args, env) {
-  return [...Object.entries(env).map(([key, value]) => `${key}=${quote(value)}`), ...args.map(quote)].join(' ')
-}
+const tmux = require('./tmux.cjs')
+const { command } = tmux
 
 const valueOptions = new Set(['-c', '--config', '-p', '--profile', '-m', '--model', '-C', '--cd', '-s', '--sandbox', '-a', '--ask-for-approval', '-i', '--image', '--add-dir', '--remote', '--remote-auth-token-env', '--enable', '--disable', '--session'])
 
@@ -96,31 +92,17 @@ if (require.main === module) {
   if (print) {
     console.log(JSON.stringify({ sessionId: setup.sessionId, codex: setup.left, panel: setup.right }, null, 2))
   } else {
-    if (child.spawnSync('tmux', ['-V'], { stdio: 'ignore' }).error) {
+    if (!tmux.available()) {
       console.error('tmux is required for two panes in one terminal. Install it, or use --print to run the two commands in terminal splits. On macOS: brew install tmux')
       process.exit(1)
     }
-    const name = `window-todo-${crypto.randomUUID().slice(0, 8)}`
-    const run = params => {
-      const result = child.spawnSync('tmux', params, { stdio: 'inherit' })
-      if (result.status !== 0) throw new Error(`tmux ${params[0]} failed`)
-    }
-    run(['new-session', '-d', '-s', name, '-c', process.cwd(), setup.left])
-    try {
-      run(['set-option', '-t', name, 'prefix', 'C-a'])
-      run(['set-option', '-t', name, 'prefix2', 'None'])
-      run(['split-window', '-h', '-l', '35%', '-t', `${name}:0`, '-c', process.cwd(), setup.right])
-      run(['set-window-option', '-t', `${name}:0`, 'window-status-current-format', '#I:#{?#{==:#{pane_index},0},Codex,Window Todo}#F'])
-      run(['select-pane', '-t', `${name}:0.0`])
-      if (setup.sessionId) console.log(`window-todo session: ${setup.sessionId}. Resume the list with --session ${setup.sessionId}.`)
-      if (process.env.TMUX) run(['switch-client', '-t', name])
-      else run(['attach-session', '-t', name])
-    } catch (error) {
-      child.spawnSync('tmux', ['kill-session', '-t', name], { stdio: 'ignore' })
-      if (setup.panelBinding) binding.close(setup.panelBinding, setup.environment)
-      console.error(error.message)
-      process.exitCode = 1
-    }
+    tmux.open({
+      left: setup.left,
+      right: setup.right,
+      label: 'Codex',
+      notice: setup.sessionId ? `window-todo session: ${setup.sessionId}. Resume the list with --session ${setup.sessionId}.` : undefined,
+      cleanup: () => { if (setup.panelBinding) binding.close(setup.panelBinding, setup.environment) },
+    })
   }
 }
 module.exports = { prepare, command, interactive }
