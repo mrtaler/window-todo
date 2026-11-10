@@ -1,6 +1,6 @@
 {
   "name": "window-todo",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "The task plan (a plan tool with a pane, status line and a gate) plus a window list of open items, kept per session and fed by a small observer model.",
   "author": {
     "name": "mrTaler"

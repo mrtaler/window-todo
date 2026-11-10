@@ -1,3 +1,9 @@
+## [0.6.0](https://github.com/mrtaler/window-todo/compare/v0.5.0...v0.6.0) (2026-11-10)
+
+### Features
+
+* **codex:** improve companion launch and cleanup commands ([0ce4ea2](https://github.com/mrtaler/window-todo/commit/0ce4ea2be03aa1d70dad0710e654506416ff24cf))
+
 ## [0.5.0](https://github.com/mrtaler/window-todo/compare/v0.4.0...v0.5.0) (2026-11-10)
 
 ### Features
