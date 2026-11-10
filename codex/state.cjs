@@ -38,6 +38,22 @@ function read(sessionId, dir = directory()) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+function holder(lock) {
+  try {
+    const info = fs.statSync(lock)
+    return { owner: info.isDirectory() ? null : fs.readFileSync(lock, 'utf8'), age: Date.now() - info.mtimeMs }
+  } catch (error) { if (error.code === 'ENOENT' || error.code === 'EISDIR') return; throw error }
+}
+
+// A live owner is never interrupted; a dead one is reclaimed at once, an unreadable one once it is old.
+function stale(found) {
+  const pid = Number(found.owner)
+  if (found.owner && Number.isInteger(pid) && pid > 0) {
+    try { process.kill(pid, 0); return false } catch (probe) { return probe.code === 'ESRCH' }
+  }
+  return found.age > 2000
+}
+
 async function change(sessionId, update, dir = directory()) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   const file = filename(sessionId, dir)
@@ -45,21 +61,19 @@ async function change(sessionId, update, dir = directory()) {
   const deadline = Date.now() + 5000
   while (true) {
     try {
-      fs.mkdirSync(lock, { mode: 0o700 })
-      fs.writeFileSync(path.join(lock, 'owner'), String(process.pid), { mode: 0o600 })
+      fs.writeFileSync(lock, String(process.pid), { flag: 'wx', mode: 0o600 })
       break
     } catch (error) {
       if (error.code !== 'EEXIST') throw error
-      // Only reclaim an old lock whose owner is gone. A busy live process is never interrupted.
-      try {
-        if (Date.now() - fs.statSync(lock).mtimeMs > 30000) {
-          const owner = Number(fs.readFileSync(path.join(lock, 'owner'), 'utf8'))
-          if (Number.isInteger(owner) && owner > 0) {
-            try { process.kill(owner, 0) }
-            catch (probe) { if (probe.code === 'ESRCH') fs.rmSync(lock, { recursive: true }) }
-          }
-        }
-      } catch (probe) { if (probe.code !== 'ENOENT') throw probe }
+      const found = holder(lock)
+      const again = found && stale(found) && holder(lock)
+      if (again && again.owner === found.owner && stale(again)) {
+        // Move the stale lock aside first so two waiters cannot both delete a fresh one.
+        const aside = `${lock}.stale.${process.pid}.${crypto.randomUUID()}`
+        try { fs.renameSync(lock, aside) } catch (probe) { if (probe.code !== 'ENOENT') throw probe; continue }
+        fs.rmSync(aside, { recursive: true, force: true })
+        continue
+      }
       if (Date.now() > deadline) throw new Error('State is busy; retry the operation.')
       await sleep(15)
     }
@@ -76,7 +90,7 @@ async function change(sessionId, update, dir = directory()) {
     return { state: current, result }
   } finally {
     if (temporary) fs.rmSync(temporary, { force: true })
-    fs.rmSync(lock, { recursive: true, force: true })
+    fs.rmSync(lock, { force: true })
   }
 }
 

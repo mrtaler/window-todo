@@ -137,3 +137,45 @@ test('launcher gives both panes one session, quotes paths and preserves Codex op
   assert.ok(setup.left.includes("'\"'\"'"))
   assert.ok(!setup.codexArgs.includes('--dangerously-bypass-hook-trust'))
 })
+
+function locked(t) {
+  const f = fixture(t)
+  const lock = store.filename('locked', f.directory) + '.lock'
+  const old = Date.now() / 1000 - 60
+  const add = () => store.change('locked', state => { state.window.items.push({ id: 'T1' }) }, f.directory)
+  return { directory: f.directory, lock, old, add }
+}
+
+test('an old lock directory left by the previous lock format is reclaimed', async t => {
+  const l = locked(t)
+  fs.mkdirSync(l.lock)
+  fs.utimesSync(l.lock, l.old, l.old)
+  await l.add()
+  assert.equal(fs.existsSync(l.lock), false)
+  assert.deepEqual(fs.readdirSync(l.directory).filter(name => name.includes('.stale.')), [])
+})
+
+test('an old empty lock file is reclaimed', async t => {
+  const l = locked(t)
+  fs.writeFileSync(l.lock, '')
+  fs.utimesSync(l.lock, l.old, l.old)
+  await l.add()
+  assert.equal(fs.existsSync(l.lock), false)
+})
+
+test('a fresh lock held by a dead process is reclaimed at once', async t => {
+  const l = locked(t)
+  fs.writeFileSync(l.lock, String(child.spawnSync(process.execPath, ['-e', '']).pid))
+  const started = Date.now()
+  await l.add()
+  assert.ok(Date.now() - started < 1000)
+  assert.equal(fs.existsSync(l.lock), false)
+})
+
+test('an old lock held by a live process is never reclaimed', async t => {
+  const l = locked(t)
+  fs.writeFileSync(l.lock, String(process.pid))
+  fs.utimesSync(l.lock, l.old, l.old)
+  await assert.rejects(l.add(), /busy/)
+  assert.equal(fs.readFileSync(l.lock, 'utf8'), String(process.pid))
+})
