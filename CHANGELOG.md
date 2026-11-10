@@ -1,3 +1,9 @@
+## [0.8.0](https://github.com/mrtaler/window-todo/compare/v0.7.0...v0.8.0) (2026-11-10)
+
+### Features
+
+* **release:** ship one release tag, Claude from sources and Codex from an npm-format asset ([045facf](https://github.com/mrtaler/window-todo/commit/045facf59436b06c3afa64ea9c5acd598caecfcd))
+
 ## [0.7.0](https://github.com/mrtaler/window-todo/compare/v0.6.0...v0.7.0) (2026-11-10)
 
 ### Features
