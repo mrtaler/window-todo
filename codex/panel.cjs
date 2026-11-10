@@ -74,6 +74,7 @@ function main(args = process.argv.slice(2)) {
         const current = binding.read(panelBinding)
         if (current?.closed) { done(); return }
         sessionId = current?.sessionId
+        if (sessionId && notice === 'No conversation bound yet.') { notice = ''; failed = false }
         if (!sessionId) {
           text = 'WINDOW TODO\nWaiting for the Codex conversation...'
         }
