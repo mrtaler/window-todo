@@ -11,25 +11,27 @@ shared/   client-independent types, plan/window logic, rendering and observer pa
 claude/   Claude hooks, panes, store, model configuration and SDK declarations
 codex/    Codex MCP server, hooks, file store and companion terminal
 scripts/  build, package checks and release version updates
-dist/     generated runtime (not committed): one shared ESM core and the two adapters
+dist/     generated runtime (not committed): the shared ESM core and the Codex adapter
 ```
 
-Both adapters import the same built `dist/shared/` modules. There is no second hand-maintained
+Both adapters run the same `shared/` modules: Claude Code loads them from the TypeScript
+sources, Codex from the built `dist/shared/`. There is no second hand-maintained
 implementation or Codex-specific copy of the core. Shared tests use Node's test runner;
-only Claude adapter tests require the Claude testing SDK. The Claude atom contract is
-generated from the canonical shared types because that SDK requires inline state schemas.
+only Claude adapter tests require the Claude testing SDK. The Claude state contract,
+`claude/state.d.ts`, is generated from the canonical shared types and
+`claude/state-schema.ts` because that SDK requires a self-contained file with inline state
+schemas. It is committed so that a tag installs without a build step.
 
 `master` holds sources only. `npm run build` produces `dist/` locally; it is ignored by Git
 and the MR gate fails if anything under `dist/` is tracked. Build a local checkout before
-using `--plugin-dir`, adding it to a local marketplace or running `node dist/codex/launch.cjs`.
-MR builds are tested and uploaded as artifacts.
+running `node dist/codex/launch.cjs` or installing it in Codex. MR builds are tested and
+uploaded as artifacts.
 
-Releases publish the built package to the `release` branch, tagged `v<version>-package`.
-That tree holds only the manifests, `dist/`, `README.md`, `LICENSE` and `NOTICE`: no
-sources, tests or `package.json`. The marketplace catalog installs that package tag, so a
-Git install needs no build step. The release archive holds the same files for CI inspection
-and manual installation; the marketplace does not download it. Install package tags, not
-source tags, arbitrary commits or `master`.
+Each release is one tag, `v<version>`. Claude Code installs that tag from its sources. Codex
+installs the release asset `window-todo-<version>.tgz`, an npm-format package with the Codex
+manifest, `dist/codex/`, `dist/shared/`, `README.md`, `LICENSE` and `NOTICE`, which the
+catalog resolves through its static registry `registry/window-todo`. Install release tags,
+not arbitrary commits or `master`.
 
 ## Claude Code
 
@@ -81,8 +83,8 @@ with `--config KEY=VALUE` on install:
 ## OpenAI Codex
 
 Requirements: Node.js 22.12 or later, Codex with plugin support, and tmux for two panes in
-one terminal. Package tags include the generated shared core: installing a release does
-not require npm or TypeScript.
+one terminal. The release package includes the generated shared core: installing a release
+does not require TypeScript or a build.
 The Codex entrypoints check the Node version before loading ESM and report a clear error;
 unsupported hook runtimes return an empty response instead of blocking the session.
 
@@ -202,18 +204,21 @@ npm run demo
 npm ci
 npm run check    # typecheck, build, validate, test the core/adapters/installable package
 npm run demo     # preview the built Codex pane without model calls
-npm run pack     # create artifacts/window-todo-<version>.tar.gz
+npm run pack     # create artifacts/window-todo-<version>.tgz, the Codex package
 ```
 
 Development uses Node.js 24 or later. Claude tests need Claude Code 2.1.309 or later: older
 test engines lack `mock.session` and do not route a mod's `session.append` to a test hook.
-Run `npm run build` before installing a local development checkout in either client.
+Run `npm run build` before installing a local development checkout in Codex; Claude Code
+loads the sources directly.
 
-Commit source changes only; the release workflow builds and publishes `dist/`. Codex tests cover the
+Commit source changes only; the release workflow builds and publishes `dist/`. When the
+shared types or `claude/state-schema.ts` change, run `npm run build` and commit the regenerated
+`claude/state.d.ts`; the MR gate fails when it is stale. Codex tests cover the
 actual stdio MCP protocol, multi-process updates, restart persistence, session isolation,
-hooks and launcher quoting. Package tests install only the runtime and metadata in a temporary
-folder, validate the Claude plugin, run all Claude adapter tests against its built JS and
-exercise Codex MCP without the source tree or development dependencies.
+hooks and launcher quoting. The Claude plugin is validated and tested on the source tree.
+Package tests assemble the Codex package in a temporary folder, check its npm layout and
+manifest paths and exercise Codex MCP without the source tree or development dependencies.
 `npm test` always builds first, so it cannot silently test a stale runtime. Node declarations
 are enabled only for shared test specs, not for the Claude adapter or the shared production code.
 
@@ -225,24 +230,19 @@ status as a required branch-protection check when merge must depend on it.
 
 After merge into `master`, the release workflow reruns the checks and semantic-release
 calculates the next version from Conventional Commits. Its prepare step updates both
-plugin manifests, builds the runtime with that version, tests the installable package and
+plugin manifests, builds the runtime with that version, tests the Codex package and
 creates the archive. `@semantic-release/git` commits the manifests and `CHANGELOG.md` as
 `chore(release): <version> [skip ci]`; `dist/` stays out of `master`. GitHub receives the
 release tag and the package archive only after preparation succeeds.
 
-`scripts/publish-package.js` then builds the package again from the immutable release tag
-(`git archive`, `npm ci`, build, package tests), commits only the package contents as the next
-commit of the `release` branch and tags it `v<version>-package`. Branch and tag are pushed
-together. A package tag is never merged into `master`, so semantic-release does not read it as
-a version. Rerunning the step for a published package only verifies the existing tag.
-
-The existing release-bot job then opens an agent-plugins PR that points both catalog entries
-at the new package tag. Until that catalog PR is merged, users keep the previous released
+The release-bot job then opens an agent-plugins PR that points the Claude entry at the new
+tag, adds the version with the asset's URL and integrity to `registry/window-todo` and points
+the Codex entry at it. Until that catalog PR is merged, users keep the previous released
 version. Docs/chore-only changes do not create a release unless the configured commit rules
 warrant one.
 
-Source tags use semantic-release's default `v<version>` format; package tags append
-`-package`. Leave version numbers, changelog entries and both tags to this workflow.
+Tags use semantic-release's default `v<version>` format. Leave version numbers, changelog
+entries and tags to this workflow.
 
 If GitHub rejects Git notes after a release tag has already been pushed, the workflow retries
 the note and completes publication from that immutable tagged tree. It does not recalculate a
@@ -251,10 +251,9 @@ failures. An existing draft release requires operator review.
 
 To finish a previously interrupted publication, run the `release` workflow manually with
 `recover_tag` set to the existing stable tag. The recovery job verifies both tagged manifests
-and the tag's ancestry on `master`, builds the tagged sources to restore the archive, publishes
-the package tag if it is missing and runs the existing catalog update job. It never builds
-newer source code. Both the automatic recovery and the manual one end with the package
-published.
+and the tag's ancestry on `master`, builds the tagged sources to restore the archive and runs
+the existing catalog update job. It never builds newer source code. Both the automatic
+recovery and the manual one end with the package published.
 
 ## Licence
 

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
-const { releaseVersion, notesFailureTag, releaseNotes } = require('./recover-release.js')
+const path = require('node:path')
+const { releaseVersion, notesFailureTag, releaseNotes, packagedArchive } = require('./recover-release.js')
 
 test('recovery accepts a stable tag and rejects arbitrary refs or shell input', () => {
   assert.equal(releaseVersion('v0.5.0'), '0.5.0')
@@ -19,4 +20,11 @@ test('recovery publishes the selected changelog section without older release no
   assert.match(result, /New package/)
   assert.ok(!result.includes('Old package'))
   assert.throws(() => releaseNotes(changelog, '0.6.0'))
+})
+
+test('recovery takes the archive the tagged package script reports, old or npm format', () => {
+  const source = path.resolve('/tmp/source')
+  assert.equal(packagedArchive('artifacts/window-todo-0.8.0.tgz\n', source, '0.8.0'), path.join(source, 'artifacts/window-todo-0.8.0.tgz'))
+  assert.equal(packagedArchive('noise\nartifacts/window-todo-0.7.0.tar.gz', source, '0.7.0'), path.join(source, 'artifacts/window-todo-0.7.0.tar.gz'))
+  for (const output of ['artifacts/window-todo-0.7.0.tgz', '../artifacts/window-todo-0.8.0.tgz', 'artifacts/other-0.8.0.tgz', '']) assert.throws(() => packagedArchive(output, source, '0.8.0'))
 })

@@ -3,18 +3,24 @@ const os = require('node:os')
 const path = require('node:path')
 const assert = require('node:assert/strict')
 const { spawnSync } = require('node:child_process')
-const { assemble } = require('./package.js')
+const { assemble, archive } = require('./package.js')
 
-const root = path.resolve(__dirname, '..')
+// Tests the Codex package only: Claude installs the tag from sources, covered by validate and test:claude.
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'window-todo-installed-'))
 try {
   assemble(temporary)
-  // The installable package has runtime JS, contracts and metadata, without development sources.
-  for (const directory of ['shared', 'claude', 'codex', 'node_modules']) assert.ok(!fs.existsSync(path.join(temporary, directory)))
+  // The installable package has runtime JS and metadata, without development sources or the Claude adapter.
+  for (const entry of ['shared', 'claude', 'codex', 'node_modules', 'dist/claude', '.claude-plugin']) assert.ok(!fs.existsSync(path.join(temporary, entry)), `Unexpected package entry: ${entry}`)
   assert.ok(fs.existsSync(path.join(temporary, 'dist/shared/plan.js')))
-  const expectedVersion = JSON.parse(fs.readFileSync(path.join(temporary, '.claude-plugin/plugin.json'))).version
   const codexManifest = JSON.parse(fs.readFileSync(path.join(temporary, '.codex-plugin/plugin.json')))
-  assert.equal(codexManifest.version, expectedVersion)
+  const expectedVersion = codexManifest.version
+  // One tag carries both clients, so the Claude manifest in the tree must carry the same version.
+  assert.equal(JSON.parse(fs.readFileSync(path.resolve(__dirname, '../.claude-plugin/plugin.json'))).version, expectedVersion)
+  const packageManifest = JSON.parse(fs.readFileSync(path.join(temporary, 'package.json')))
+  assert.equal(packageManifest.name, 'window-todo')
+  assert.equal(packageManifest.version, expectedVersion)
+  assert.equal(codexManifest.name, packageManifest.name)
+  assert.ok(!packageManifest.scripts && !packageManifest.dependencies, 'The package must not run scripts or install dependencies.')
   function packagePath(relative) {
     assert.equal(typeof relative, 'string')
     const resolved = path.resolve(temporary, relative.replaceAll('${PLUGIN_ROOT}', temporary))
@@ -50,14 +56,12 @@ try {
   assert.equal(replies[0].result.serverInfo.version, expectedVersion)
   assert.equal(replies[1].result.isError, false)
   assert.match(replies[1].result.content[0].text, /Added T1/)
-  const validate = spawnSync('claude', ['plugin', 'validate', temporary], { encoding: 'utf8' })
-  assert.equal(validate.status, 0, validate.stdout + validate.stderr)
-  // Run existing adapter tests against the installed JS, not against its TypeScript source.
-  for (const name of fs.readdirSync(path.join(root, 'claude')).filter(name => name.endsWith('.test.ts'))) {
-    fs.copyFileSync(path.join(root, 'claude', name), path.join(temporary, 'dist/claude', name))
-  }
-  const tests = spawnSync('claude', ['plugin', 'test', temporary], { encoding: 'utf8' })
-  if (tests.status !== 0) process.stderr.write(tests.stdout + tests.stderr)
-  assert.equal(tests.status, 0, 'Installed Claude adapter tests failed.')
-  console.log('Installed package: matching versions, shared JS, Codex MCP and all Claude adapter tests passed.')
+  // npm-format archive: every entry under package/, with the package.json npm resolves by name.
+  const artifacts = path.join(temporary, '.artifacts')
+  const listing = spawnSync('tar', ['-tzf', archive(artifacts)], { encoding: 'utf8' })
+  assert.equal(listing.status, 0, listing.stderr)
+  const archived = listing.stdout.split('\n').filter(Boolean)
+  for (const entry of archived) assert.ok(entry.startsWith('package/'), `Archive entry outside package/: ${entry}`)
+  for (const entry of ['package/package.json', 'package/.codex-plugin/plugin.json', 'package/dist/codex/mcp.cjs']) assert.ok(archived.includes(entry), `Archive lacks ${entry}`)
+  console.log('Codex package: matching versions, npm layout, manifest paths and the MCP smoke test passed.')
 } finally { fs.rmSync(temporary, { recursive: true, force: true }) }

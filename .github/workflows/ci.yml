@@ -18,7 +18,7 @@ jobs:
         run: |
           tracked="$(git ls-files dist)"
           if [ -n "$tracked" ]; then
-            echo "dist/ is generated and published to the release branch; stop tracking it:"
+            echo "dist/ is generated and published only inside the release asset; stop tracking it:"
             echo "$tracked"
             exit 1
           fi
@@ -30,9 +30,15 @@ jobs:
       - name: Install the Claude test engine
         run: npm install -g @anthropic-ai/claude-code@2.1.321
       - run: npm run check
+      - name: Reject a stale Claude state contract
+        run: |
+          if ! git diff --exit-code -- claude/state.d.ts; then
+            echo "claude/state.d.ts differs from the generated contract; run npm run build and commit it."
+            exit 1
+          fi
       - run: npm run pack
       - uses: actions/upload-artifact@v7
         with:
           name: window-todo-package
-          path: artifacts/window-todo-*.tar.gz
+          path: artifacts/window-todo-*.tgz
           if-no-files-found: error

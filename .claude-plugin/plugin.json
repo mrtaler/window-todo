@@ -14,8 +14,8 @@
     "status-line",
     "window-list"
   ],
-  "types": "./dist/claude/state.d.ts",
-  "hooks": "./dist/claude/hooks.json",
+  "types": "./claude/state.d.ts",
+  "hooks": "./claude/hooks.json",
   "userConfig": {
     "enforce": {
       "type": "boolean",

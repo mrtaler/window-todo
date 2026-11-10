@@ -32,7 +32,6 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag || steps.recover.outputs.tag }}
       version: ${{ steps.release.outputs.version || steps.recover.outputs.version }}
-      package_tag: ${{ steps.package.outputs.package_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,8 +41,6 @@ jobs:
           node-version: lts/*
           cache: npm
       - run: npm ci
-      - name: Install the Claude package test engine
-        run: npm install -g @anthropic-ai/claude-code@2.1.321
       - name: Release
         id: release
         continue-on-error: true
@@ -67,13 +64,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/recover-release.js --notes-failure-log "$RUNNER_TEMP/window-todo-release.log"
-      # Builds the released tag again from its own sources and commits only the package to the release branch.
-      - name: Publish the package branch
-        id: package
-        if: ${{ steps.release.outputs.tag != '' || steps.recover.outputs.tag != '' }}
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag || steps.recover.outputs.tag }}
-        run: node scripts/publish-package.js "$RELEASE_TAG"
 
   recovery:
     needs: validate
@@ -84,7 +74,6 @@ jobs:
     outputs:
       tag: ${{ steps.recover.outputs.tag }}
       version: ${{ steps.recover.outputs.version }}
-      package_tag: ${{ steps.package.outputs.package_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,28 +81,26 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
-      - name: Install the Claude package test engine
-        run: npm install -g @anthropic-ai/claude-code@2.1.321
       - name: Complete publication of the existing tag
         id: recover
         env:
           RECOVER_TAG: ${{ inputs.recover_tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/recover-release.js
-      - name: Publish the package branch
-        id: package
-        env:
-          RELEASE_TAG: ${{ steps.recover.outputs.tag }}
-        run: node scripts/publish-package.js "$RELEASE_TAG"
 
-  # Points the catalogue entry in github.com/mrtaler/agent-plugins at the new package tag through a
-  # pull request opened by the mrtaler-release-bot GitHub App: the built-in GITHUB_TOKEN cannot write
-  # to another repository, and a pull request it opened would not trigger the catalogue's checks.
+  # Moves both catalogue entries in github.com/mrtaler/agent-plugins to the new release through a
+  # pull request opened by the mrtaler-release-bot GitHub App: Claude installs the release tag from
+  # sources, Codex installs the npm-format release asset through the catalogue's static registry.
+  # The built-in GITHUB_TOKEN cannot write to another repository, and a pull request it opened would
+  # not trigger the catalogue's checks.
   catalogue:
     needs: [release, recovery]
-    if: ${{ always() && (needs.release.outputs.package_tag != '' || needs.recovery.outputs.package_tag != '') }}
+    if: ${{ always() && (needs.release.outputs.tag != '' || needs.recovery.outputs.tag != '') }}
     runs-on: ubuntu-latest
     permissions: {}
+    env:
+      TAG: ${{ needs.release.outputs.tag || needs.recovery.outputs.tag }}
+      VERSION: ${{ needs.release.outputs.version || needs.recovery.outputs.version }}
     steps:
       - uses: actions/create-github-app-token@v3
         id: app-token
@@ -126,23 +113,33 @@ jobs:
         with:
           repository: mrtaler/agent-plugins
           token: ${{ steps.app-token.outputs.token }}
-      - name: Point the catalogue at the package tag
-        env:
-          PACKAGE_TAG: ${{ needs.release.outputs.package_tag || needs.recovery.outputs.package_tag }}
+      - name: Point the catalogue at the release
         run: |
-          for catalogue in .claude-plugin/marketplace.json .agents/plugins/marketplace.json; do
-            [ -f "$catalogue" ] || continue
-            jq --arg ref "$PACKAGE_TAG" \
-              '(.plugins[] | select(.name == "window-todo") | .source) |= (if type == "object" then del(.sha) + {ref: $ref} else . end)' \
-              "$catalogue" > "$catalogue.tmp"
-            mv "$catalogue.tmp" "$catalogue"
-          done
+          set -euo pipefail
+          tarball="https://github.com/mrtaler/window-todo/releases/download/${TAG}/window-todo-${VERSION}.tgz"
+          archive="$RUNNER_TEMP/window-todo-${VERSION}.tgz"
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$archive" "$tarball"
+          integrity="sha512-$(openssl dgst -sha512 -binary "$archive" | base64 -w0)"
+          jq --arg ref "$TAG" \
+            '(.plugins[] | select(.name == "window-todo") | .source) = {source: "url", url: "https://github.com/mrtaler/window-todo.git", ref: $ref}' \
+            .claude-plugin/marketplace.json > "$RUNNER_TEMP/claude.json"
+          mv "$RUNNER_TEMP/claude.json" .claude-plugin/marketplace.json
+          jq --arg version "$VERSION" \
+            '(.plugins[] | select(.name == "window-todo") | .source) = {source: "npm", package: "window-todo", version: $version, registry: "https://raw.githubusercontent.com/mrtaler/agent-plugins/master/registry"}' \
+            .agents/plugins/marketplace.json > "$RUNNER_TEMP/codex.json"
+          mv "$RUNNER_TEMP/codex.json" .agents/plugins/marketplace.json
+          mkdir -p registry
+          [ -f registry/window-todo ] || echo '{"name":"window-todo","dist-tags":{},"versions":{}}' > registry/window-todo
+          jq --arg version "$VERSION" --arg tarball "$tarball" --arg integrity "$integrity" \
+            '.versions[$version] = {name: "window-todo", version: $version, dist: {tarball: $tarball, integrity: $integrity}} | .["dist-tags"].latest = $version' \
+            registry/window-todo > "$RUNNER_TEMP/registry.json"
+          mv "$RUNNER_TEMP/registry.json" registry/window-todo
       - uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
           branch: release/window-todo
           delete-branch: true
           sign-commits: true
-          commit-message: "feat: window-todo ${{ needs.release.outputs.version || needs.recovery.outputs.version }}"
-          title: "feat: window-todo ${{ needs.release.outputs.version || needs.recovery.outputs.version }} (${{ needs.release.outputs.package_tag || needs.recovery.outputs.package_tag }})"
-          body: "Points window-todo at package tag ${{ needs.release.outputs.package_tag || needs.recovery.outputs.package_tag }}: the built package of release ${{ needs.release.outputs.tag || needs.recovery.outputs.tag }}, published on the release branch of mrtaler/window-todo."
+          commit-message: "feat: window-todo ${{ env.VERSION }}"
+          title: "feat: window-todo ${{ env.VERSION }}"
+          body: "Moves the Claude entry of window-todo to tag ${{ env.TAG }}, installed from sources. Codex installs ${{ env.VERSION }} from the release asset window-todo-${{ env.VERSION }}.tgz through registry/window-todo."
