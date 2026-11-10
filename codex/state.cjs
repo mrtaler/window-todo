@@ -54,9 +54,8 @@ function stale(found) {
   return found.age > 2000
 }
 
-async function change(sessionId, update, dir = directory()) {
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const file = filename(sessionId, dir)
+// Runs `body` while holding `<file>.lock`, created exclusively and removed afterwards.
+async function locked(file, body) {
   const lock = file + '.lock'
   const deadline = Date.now() + 5000
   while (true) {
@@ -78,20 +77,33 @@ async function change(sessionId, update, dir = directory()) {
       await sleep(15)
     }
   }
-  let temporary
+  try { return await body() }
+  finally { fs.rmSync(lock, { force: true }) }
+}
+
+// Replaces `file` with `value` as JSON through a temporary file and a rename, so a reader never
+// sees a half-written file.
+function writeAtomic(file, value) {
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`
   try {
-    const current = read(sessionId, dir)
-    const result = update(current)
-    current.updatedAt = Date.now()
-    temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`
-    fs.writeFileSync(temporary, JSON.stringify(current) + '\n', { flag: 'wx', mode: 0o600 })
+    fs.writeFileSync(temporary, JSON.stringify(value) + '\n', { flag: 'wx', mode: 0o600 })
     fs.renameSync(temporary, file)
-    temporary = undefined
-    return { state: current, result }
-  } finally {
-    if (temporary) fs.rmSync(temporary, { force: true })
-    fs.rmSync(lock, { force: true })
+  } catch (error) {
+    fs.rmSync(temporary, { force: true })
+    throw error
   }
 }
 
-module.exports = { directory, sessionFrom, filename, emptyState, read, change }
+async function change(sessionId, update, dir = directory()) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const file = filename(sessionId, dir)
+  return locked(file, () => {
+    const current = read(sessionId, dir)
+    const result = update(current)
+    current.updatedAt = Date.now()
+    writeAtomic(file, current)
+    return { state: current, result }
+  })
+}
+
+module.exports = { directory, sessionFrom, filename, emptyState, read, change, locked, writeAtomic }

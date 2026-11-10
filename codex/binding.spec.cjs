@@ -122,7 +122,7 @@ test('a bound panel keeps watching for the conversation even when stdout is a pi
     const timeout = setTimeout(() => reject(new Error(`Panel did not render ${text}: ${output}`)), 3000)
     waiting.push({ text, resolve: () => { clearTimeout(timeout); resolve() } })
   })
-  await includes('Waiting for the Codex conversation...')
+  await includes('Waiting for the conversation...')
   await call('window', { sessionId: 'native', op: 'add', kind: 'T', title: 'Task appeared after waiting' }, { env: f.env })
   await handle({ hook_event_name: 'SessionStart', session_id: 'native' }, f.env)
   await includes('Task appeared after waiting')
