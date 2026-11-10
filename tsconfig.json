@@ -17,8 +17,9 @@
     "jsxFragmentFactory": "Fragment"
   },
   "include": [
-    "vendor/claude-code/claude-code.d.ts",
-    "hooks/**/*",
-    "types/**/*"
-  ]
+    "claude/vendor/claude-code.d.ts",
+    "claude/**/*",
+    "shared/**/*"
+  ],
+  "exclude": ["shared/**/*.spec.ts"]
 }

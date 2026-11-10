@@ -2,9 +2,9 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
-const { emptyPlan } = require('./core/plan')
-const { emptyWindow } = require('./core/window')
-const { emptyActivity } = require('./core/activity')
+const { emptyPlan } = require('../shared/plan.js')
+const { emptyWindow } = require('../shared/window.js')
+const { emptyActivity } = require('../shared/activity.js')
 
 function directory(env = process.env) {
   return env.WINDOW_TODO_STATE_DIR || path.join(env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'), 'window-todo')

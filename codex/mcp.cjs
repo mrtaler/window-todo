@@ -1,6 +1,7 @@
+require('./runtime.cjs').ensureRuntime({ host: process })
 const readline = require('node:readline')
 const { tools, call } = require('./service.cjs')
-const { version } = require('../.codex-plugin/plugin.json')
+const { version } = require('../../.codex-plugin/plugin.json')
 
 const supportedVersions = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']
 function send(value) { process.stdout.write(JSON.stringify(value) + '\n') }

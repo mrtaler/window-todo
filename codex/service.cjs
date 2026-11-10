@@ -1,7 +1,7 @@
 const store = require('./state.cjs')
-const { parsePlanInput, applyPlanOp, PLAN_INPUT_SCHEMA, PLAN_TOOL_DESCRIPTION } = require('./core/plan-tool')
-const { parseWindowInput, WINDOW_INPUT_SCHEMA, WINDOW_TOOL_DESCRIPTION } = require('./core/window-tool')
-const { addItem, closeItems, skipItems, pruneDone, describeWindow } = require('./core/window')
+const { parsePlanInput, applyPlanOp, PLAN_INPUT_SCHEMA, PLAN_TOOL_DESCRIPTION } = require('../shared/plan-tool.js')
+const { parseWindowInput, WINDOW_INPUT_SCHEMA, WINDOW_TOOL_DESCRIPTION } = require('../shared/window-tool.js')
+const { addItem, closeItems, skipItems, pruneDone, describeWindow } = require('../shared/window.js')
 
 const sessionProperty = { type: 'string', description: 'Current Codex thread ID. Required unless the launcher supplies WINDOW_TODO_SESSION. Always use the same ID for this conversation.' }
 const tools = [
