@@ -1,3 +1,13 @@
+## [0.5.0](https://github.com/mrtaler/window-todo/compare/v0.4.0...v0.5.0) (2026-11-10)
+
+### Features
+
+* **build:** share one core and assemble tested release packages ([c6bdfb0](https://github.com/mrtaler/window-todo/commit/c6bdfb07d1488b7016c17cee5c6260e3ac8b5f15))
+
+### Bug Fixes
+
+* **ci:** guard generated runtime and harden package checks ([a44c538](https://github.com/mrtaler/window-todo/commit/a44c5382fbb95304dfc2fdf1fc3249cdf12d40a1))
+
 ## [0.4.0](https://github.com/mrtaler/window-todo/compare/v0.3.0...v0.4.0) (2026-11-10)
 
 ### Features
