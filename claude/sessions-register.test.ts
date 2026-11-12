@@ -31,7 +31,7 @@ const BIG_TAIL = `cut line"}\n${line({ type: 'ai-title', aiTitle: 'Big session A
 
 type World = { files: Map<string, string>; reads: string[]; runs: string[][] }
 
-const setup = (on: On, options: { listDenied?: boolean; noProcess?: boolean } = {}): World => {
+const setup = (on: On, options: { listDenied?: boolean; noProcess?: boolean; bigHead?: string; bigTail?: string } = {}): World => {
   const stored = new Map<string, unknown>(Object.entries(STORE))
   const files = new Map<string, string>([
     [`${CLAUDE}/sessions/101.json`, JSON.stringify({ pid: 101, sessionId: 'aaaaaaaa-run', cwd: '/home/me/run', tmux: 'window-todo-1:@3.%4', procStart: 'Thu Nov 12 10:00:00 2026' })],
@@ -74,7 +74,13 @@ const setup = (on: On, options: { listDenied?: boolean; noProcess?: boolean } = 
     if (options.noProcess) return { deny: 'process is not available' }
     const [tool] = e.argv
     const stdout =
-      tool === 'ps' ? '101 Thu Nov 12 11:00:00 2026\n  102 Thu Nov 12 11:31:17 2026\n' : tool === 'tail' ? BIG_TAIL : tool === 'head' ? BIG_HEAD : ''
+      tool === 'ps'
+        ? '101 Thu Nov 12 11:00:00 2026\n  102 Thu Nov 12 11:31:17 2026\n'
+        : tool === 'tail'
+          ? (options.bigTail ?? BIG_TAIL)
+          : tool === 'head'
+            ? (options.bigHead ?? BIG_HEAD)
+            : ''
 
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -102,8 +108,10 @@ test('/todo sessions lists the sessions with open items, due first, with folders
       '    running',
       '○  cccccccc  1 open  3h  ~/big  Big session AI title',
       '    cd /home/me/big && claude --resume cccccccc-big',
-      '○  bbbbbbbb  1 open  30h  ~/old  old typed prompt',
-      '    cd /home/me/old && claude --resume bbbbbbbb-old',
+      // Its transcript lies under -home-me-other and names only /home/me/old, and it does not run:
+      // no folder is known, so the command resumes it where it is typed.
+      '○  bbbbbbbb  1 open  30h  ?  old typed prompt',
+      '    claude --resume bbbbbbbb-old',
     ].join('\n'),
   )
   // pid 102 runs under a later start time: another process reuses the pid.
@@ -133,6 +141,28 @@ test('/todo sessions without ps, tail and head still lists the sessions and name
   expect(text).toContain('Running sessions not checked: ps could not be run')
   expect(text).toContain('Transcripts not read: cccccccc')
   // The small transcripts are read through $.fs alone.
-  expect(text).toContain('~/old  old typed prompt')
+  expect(text).toContain('?  old typed prompt')
   expect(text).toContain('●  s1-curre')
+})
+
+test('/todo sessions takes the folder the transcript is filed under, from the end when the start has none', async ($, on) => {
+  // The start holds no folder even in the longer read; the end names another folder before its own.
+  const bigHead = line({ type: 'file-history-snapshot', snapshot: {} })
+  const bigTail = `cut"}\n${line({ type: 'user', message: { content: 'x' }, cwd: '/home/me/big/.claude/plugins/store' })}${line({ type: 'assistant', cwd: '/home/me/big' })}${line({ type: 'ai-title', aiTitle: 'Big session AI title' })}`
+  const { runs } = setup(on, { bigHead, bigTail })
+  const text = await sessions($)
+  expect(text).toContain('○  cccccccc  1 open  3h  ~/big  Big session AI title\n    cd /home/me/big && claude --resume cccccccc-big')
+  // The short start read found no folder, so the start is read again up to 1 MiB.
+  expect(runs.slice(1)).toEqual([
+    ['tail', '-c', String(512 * 1024), BIG],
+    ['head', '-c', String(64 * 1024), BIG],
+    ['head', '-c', String(MiB), BIG],
+  ])
+})
+
+test('/todo sessions takes no folder from a transcript that names only other folders', async ($, on) => {
+  const bigHead = line({ type: 'user', message: { content: 'first prompt of the big one' }, cwd: '/home/me/elsewhere' })
+  const bigTail = `cut"}\n${line({ type: 'assistant', cwd: '/home/me/big/.claude/plugins/store' })}${line({ type: 'ai-title', aiTitle: 'Big session AI title' })}`
+  setup(on, { bigHead, bigTail })
+  expect(await sessions($)).toContain('○  cccccccc  1 open  3h  ?  Big session AI title\n    claude --resume cccccccc-big')
 })

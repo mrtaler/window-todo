@@ -120,6 +120,22 @@ function panel(f, sessionId, keys) {
   })
 }
 
+test('/todo sessions in the command line opens the sessions page, even before a conversation is bound', t => {
+  const f = fixture(t)
+  // Claude Code's folders in the temporary directory, so nothing under the real home is read.
+  const home = path.join(f.dir, 'home')
+  const env = { ...process.env, ...f.env, HOME: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude'), CODEX_HOME: path.join(home, '.codex') }
+  delete env.TMUX
+  const binding = require(path.join(adapter, 'binding.cjs'))
+  binding.initialize('pane-token', env)
+  const out = child.spawnSync(process.execPath, [path.join(adapter, 'panel.cjs'), '--binding', 'pane-token', '--interactive'], {
+    env, input: '/todo sessions\r', encoding: 'utf8', timeout: 5000,
+  })
+  assert.equal(out.status, 0, out.stderr)
+  assert.match(out.stdout, /Waiting for the conversation\.\.\.[\s\S]*WINDOW TODO · Sessions/)
+  assert.doesNotMatch(out.stdout, /\/todo show \|/)
+})
+
 test('arrow keys select an item, Space marks it done and s moves it down', async t => {
   const f = fixture(t)
   await store.change('keys', state => { state.window = sample().window }, f.dir)

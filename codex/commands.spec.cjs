@@ -39,6 +39,15 @@ test('help works before binding; invalid commands do not mutate state', async t 
   assert.equal(fs.readdirSync(f.dir).length, 0)
 })
 
+test('/todo sessions answers the sessions page, also before binding, and is named in the usage', async t => {
+  const f = fixture(t)
+  assert.deepEqual(await execute('/todo sessions', null, f.env), { page: 'sessions', text: '' })
+  assert.deepEqual(await execute('/todo SESSIONS', 'one', f.env), { page: 'sessions', text: '' })
+  await assert.rejects(execute('/todo sessions all', 'one', f.env), /\/todo sessions/)
+  assert.match(await execute('/todo help', null, f.env), /\/todo sessions/)
+  assert.equal(fs.readdirSync(f.dir).length, 0)
+})
+
 test('the panel accepts local slash commands through its input interface', async t => {
   const f = fixture(t)
   await call('window', { sessionId: 'one', op: 'add', kind: 'T', title: 'Remove me' }, { env: f.env })

@@ -109,7 +109,9 @@ export const buildSessionRows = (input: {
 
 // What one transcript chunk says: the last custom and AI titles in it, the first prompt the person
 // typed, and the first working folder named. `isCut` drops the first line, which a read from the
-// middle of the file starts inside.
+// middle of the file starts inside. With `projectFolder`, the name of the project folder the
+// transcript lies in, only a working folder filed under that name counts: a session that moved on
+// to other folders names them too, and resuming it there would run it in the wrong place.
 export type TranscriptFacts = { customTitle?: string; aiTitle?: string; prompt?: string; cwd?: string }
 
 const promptText = (content: unknown): string | undefined => {
@@ -123,7 +125,11 @@ const promptText = (content: unknown): string | undefined => {
   return part?.text
 }
 
-export const scanTranscript = (text: string, isCut = false): TranscriptFacts => {
+// Whether `cwd` is the working folder a transcript in `projectFolder` belongs to; any folder is when
+// the project folder is not known.
+const isOwnFolder = (cwd: string, projectFolder: string | undefined): boolean => projectFolder === undefined || projectFolderName(cwd) === projectFolder
+
+export const scanTranscript = (text: string, isCut = false, projectFolder?: string): TranscriptFacts => {
   const facts: TranscriptFacts = {}
   const lines = text.split('\n')
   for (const [index, line] of lines.entries()) {
@@ -140,7 +146,7 @@ export const scanTranscript = (text: string, isCut = false): TranscriptFacts => 
     } catch {
       continue
     }
-    if (facts.cwd === undefined && typeof entry.cwd === 'string' && entry.cwd !== '') facts.cwd = entry.cwd
+    if (facts.cwd === undefined && typeof entry.cwd === 'string' && entry.cwd !== '' && isOwnFolder(entry.cwd, projectFolder)) facts.cwd = entry.cwd
     if (entry.type === 'custom-title' && typeof entry.customTitle === 'string' && clean(entry.customTitle) !== '') facts.customTitle = entry.customTitle
     if (entry.type === 'ai-title' && typeof entry.aiTitle === 'string' && clean(entry.aiTitle) !== '') facts.aiTitle = entry.aiTitle
     if (facts.prompt === undefined && entry.type === 'user' && entry.isMeta !== true && entry.isSidechain !== true) {
