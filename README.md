@@ -45,8 +45,9 @@ The Claude adapter has two lists in one pane:
    reused; a closed item stays, struck through, until a prune removes the closed ones; a skipped
    item moves to the bottom of the open
    items with its id.
-   The list is kept per session, so `/resume` brings it back. The status line counts the open
-   items, for example `T2 F1 Q1`.
+   The list is kept per session, so `/resume` brings it back. A `/clear` carries the open items,
+   with their ids, into the new session (the plan is not carried); the closed ones stay with the
+   cleared session. The status line counts the open items, for example `T2 F1 Q1`.
 
 Three ways fill the window list:
 

@@ -40,7 +40,7 @@ import {
   windowStatus,
 } from '../shared/window'
 import type { WindowList, WindowResult } from '../shared/window'
-import { changeWindow, currentWindow, forgetWindow, readWindow, sweepWindows } from './window-store'
+import { changeWindow, currentWindow, dropCarry, forgetWindow, readWindow, stashCarry, sweepWindows } from './window-store'
 import {
   applyObserverChange,
   OBSERVER_SYSTEM,
@@ -160,7 +160,11 @@ let inboxPoll: { cancel: () => void } | null = null
 
 async function pollPane($: EngineInterface): Promise<void> {
   if (await drainInbox($)) await refreshStatus($)
-  else if (await mirrorBehind($)) await refreshStatus($)
+  else if (await mirrorBehind($)) {
+    // Loads the new session's list (a /clear's carry included) before the status line is drawn.
+    await currentWindow($)
+    await refreshStatus($)
+  }
 }
 
 function startInboxPoll($: EngineInterface): void {
@@ -804,11 +808,14 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
-    // The next session (a /clear, or the one /resume opens) loads its own list on first use.
+    // The next session (a /clear, or the one /resume opens) loads its own list on first use. A
+    // /clear first leaves the open items for it; a /resume keeps the resumed session's own list.
     if (e.reason === 'clear' || e.reason === 'resume') {
       observerGeneration += 1
       lastAnswer = ''
       turnTexts.clear()
+      if (e.reason === 'clear') await guard($, 'window carry', undefined, () => stashCarry($, e.sessionId))
+      else await guard($, 'window carry', undefined, () => dropCarry($))
       await guard($, 'window forget', undefined, () => forgetWindow($))
     }
     if (e.reason === 'clear') {

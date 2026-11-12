@@ -16,8 +16,9 @@ const setup = (
   on: On,
   env: Record<string, string> = PANE_ENV,
   files: Files = new Map(),
-): { clock: MockClock; files: Files; writes: string[]; logs: string[]; session: { id: string } } => {
+): { clock: MockClock; files: Files; writes: string[]; logs: string[]; statuses: Array<string | undefined>; session: { id: string } } => {
   const session = { id: 's1' }
+  const statuses: Array<string | undefined> = []
   const writes: string[] = []
   const logs: string[] = []
   const clock = mock.clock(on, { now: 1000 })
@@ -28,7 +29,11 @@ const setup = (
   on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', async (_$, e) => ({ text: e.answer }))
   on('command.register', async () => ({ value: { command: 'todo' } }))
-  on('ui.status', async () => ({ value: undefined }))
+  on('ui.status', async (_$, e) => {
+    statuses.push(e.text)
+
+    return { value: undefined }
+  })
   on('prompt.submit', async (_$, e) => ({ text: e.text, context: e.context }))
   on('ui.log', async (_$, e, next) => {
     logs.push(e.text)
@@ -48,7 +53,7 @@ const setup = (
     return text === undefined ? { deny: `ENOENT: ${e.path}` } : { value: text }
   })
 
-  return { clock, files, writes, logs, session }
+  return { clock, files, writes, logs, statuses, session }
 }
 
 const stateOf = async (files: Files, sessionId = 's1'): Promise<Record<string, any>> => {
@@ -178,11 +183,13 @@ test('between turns the inbox is polled, and the pane inside Claude does not ope
   expect(state.inbox).toEqual({ applied: 1 })
 })
 
-test('after a /clear the poll moves the state file and the pane binding to the new session', async ($, on) => {
-  const { clock, files, session, logs } = setup(on)
+test('after a /clear the poll moves the state file and the pane binding to the new session, with the open items carried', async ($, on) => {
+  const { clock, files, session, logs, statuses } = setup(on)
   on('session.end', async (_$, e) => e)
   await $.session.start({ cwd: '/tmp', isInteractive: false, surface: 'terminal' })
   await call($, WINDOW, { op: 'add', kind: 'T', title: 'Before clear' })
+  await call($, WINDOW, { op: 'add', kind: 'F', title: 'Closed before clear' })
+  await call($, WINDOW, { op: 'done', ids: ['F1'] })
   // Past the interval, so the clear's own redraw writes at once, still under the old session.
   await clock.advance(MIRROR_INTERVAL_MS * 3)
   await $.session.end({ reason: 'clear', sessionId: 's1' } as Parameters<typeof $.session.end>[0])
@@ -190,8 +197,10 @@ test('after a /clear the poll moves the state file and the pane binding to the n
   await clock.advance(INBOX_POLL_MS)
   await clock.advance(MIRROR_INTERVAL_MS)
   expect(JSON.parse(files.get(`${DIR}/binding-${await sha256Hex('token')}.json`) ?? '{}')).toEqual({ sessionId: 's2', closed: false })
-  expect(await listed(files, 's2')).toEqual([])
-  expect(await listed(files, 's1')).toEqual(['T1:open'])
+  // The poll alone, with no prompt yet, shows the carried open item in the new session.
+  expect(await listed(files, 's2')).toEqual(['T1:open'])
+  expect(statuses.at(-1)).toBe('T1')
+  expect(await listed(files, 's1')).toEqual(['T1:open', 'F1:done'])
   expect(logs.filter(text => text.includes('mirror'))).toEqual([])
 })
 
