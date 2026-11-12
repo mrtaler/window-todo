@@ -1,3 +1,9 @@
+## [0.11.1](https://github.com/mrtaler/window-todo/compare/v0.11.0...v0.11.1) (2026-11-12)
+
+### Bug Fixes
+
+* resume a session in its own folder and open the sessions page from the pane's command line ([5c00660](https://github.com/mrtaler/window-todo/commit/5c006600303e54f46fd98ffc47e4e2cbbfd73107))
+
 ## [0.11.0](https://github.com/mrtaler/window-todo/compare/v0.10.0...v0.11.0) (2026-11-12)
 
 ### Features

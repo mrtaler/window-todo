@@ -1,6 +1,6 @@
 {
   "name": "window-todo",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "A shared plan tree and per-conversation T/F/Q/W list, with a companion terminal pane for Codex.",
   "author": {
     "name": "mrTaler"
