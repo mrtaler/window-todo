@@ -129,18 +129,23 @@ function readRange(file, start, length) {
   } finally { fs.closeSync(handle) }
 }
 
-// The facts of a transcript, read from its end and its start within the byte limits above.
+// The facts of a transcript, read from its end and its start within the byte limits above. Only a
+// working folder filed under the project folder the file lies in counts; a start whose first
+// records push the folder past HEAD_BYTES is read again up to HEAD_PROMPT_BYTES.
 function transcriptFacts(file, size) {
+  const projectFolder = path.basename(path.dirname(file))
   const tailLength = Math.min(size, TAIL_BYTES)
-  let tail = scanTranscript(readRange(file, size - tailLength, tailLength), tailLength < size)
+  let tail = scanTranscript(readRange(file, size - tailLength, tailLength), tailLength < size, projectFolder)
   if (!hasTitle(tail) && size > TAIL_BYTES) {
     const longer = Math.min(size, TAIL_MAX_BYTES)
-    tail = scanTranscript(readRange(file, size - longer, longer), longer < size)
+    tail = scanTranscript(readRange(file, size - longer, longer), longer < size, projectFolder)
   }
   if (size <= tailLength) return tail
   const headLength = Math.min(size, hasTitle(tail) ? HEAD_BYTES : HEAD_PROMPT_BYTES)
   // A head read that stops inside a line loses only that line.
-  const head = scanTranscript(readRange(file, 0, headLength))
+  let head = scanTranscript(readRange(file, 0, headLength), false, projectFolder)
+  const longHead = Math.min(size, HEAD_PROMPT_BYTES)
+  if (head.cwd === undefined && headLength < longHead) head = scanTranscript(readRange(file, 0, longHead), false, projectFolder)
   return mergeFacts(tail, head)
 }
 

@@ -346,7 +346,12 @@ function main(args = process.argv.slice(2)) {
       if (key.name === 'return' || key.name === 'enter') {
         const typed = command
         command = null
-        if (typed.trim()) act(() => commands.execute(typed, sessionId))
+        if (typed.trim()) act(async () => {
+          const answer = await commands.execute(typed, sessionId)
+          if (typeof answer === 'string') return answer
+          view.page = answer.page
+          return answer.text
+        })
       } else if (key.name === 'escape') command = null
       else if (key.name === 'backspace') command = command.length > 1 ? command.slice(0, -1) : null
       else if (text && !key.ctrl && !key.meta && !/[\x00-\x1f\x7f]/.test(text)) command += text

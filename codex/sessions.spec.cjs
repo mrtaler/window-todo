@@ -97,12 +97,35 @@ test('folder and title come from the transcript, read in bounded parts even when
   const first = sessions.collect({ env: w.env, now: NOW, starts: () => new Map(), cache })
   const byId = Object.fromEntries(first.rows.map(row => [row.sessionId, row]))
   assert.deepEqual([byId['bbbbbbbb-2'].title, byId['bbbbbbbb-2'].cwd], ['named b', '/Users/me/repo'])
-  assert.deepEqual([byId['cccccccc-3'].title, byId['cccccccc-3'].cwd], ['typed for c', '/c'])
+  // Its records name /c, which is not the folder it is filed under: no folder is taken from it.
+  assert.deepEqual([byId['cccccccc-3'].title, byId['cccccccc-3'].cwd], ['typed for c', undefined])
   assert.equal(byId['dddddddd-4'].title, undefined)
   // A second pass reads nothing that has not changed.
   const before = reads.length
   sessions.collect({ env: w.env, now: NOW, starts: () => new Map(), cache })
   assert.equal(reads.length, before)
+})
+
+test('the folder is the first one filed under the transcript project folder: from the start, else the end, else the running session', t => {
+  const w = world(t)
+  stores(w)
+  const KiB = 1024
+  const snapshot = bytes => line({ type: 'file-history-snapshot', snapshot: { text: 'x'.repeat(bytes) } })
+  const moved = line({ type: 'user', message: { content: 'cd on' }, cwd: '/Users/me/.claude/plugins/store' })
+  const tail = line({ type: 'user', message: { content: 'x'.repeat(sessions.TAIL_BYTES) } }) + line({ type: 'ai-title', aiTitle: 'titled' })
+  // b: its own folder first named past the short start read, and only another one near the end.
+  w.transcript('/Users/me', 'bbbbbbbb-2', snapshot(170 * KiB) + line({ type: 'user', message: { content: 'p' }, cwd: '/Users/me' }) + tail + moved + line({ type: 'ai-title', aiTitle: 'b' }))
+  // c: no folder in the first MiB; near the end another folder, then its own.
+  w.transcript('/Users/me/c', 'cccccccc-3', snapshot(1100 * KiB) + tail + moved + line({ type: 'assistant', cwd: '/Users/me/c' }) + line({ type: 'ai-title', aiTitle: 'c' }))
+  // d: runs, and its transcript names only another folder; the running session's folder stands in.
+  w.transcript('/Users/me/d', 'dddddddd-4', line({ type: 'user', message: { content: 'p' }, cwd: '/Users/me/elsewhere' }))
+  w.sessionFile(104, { sessionId: 'dddddddd-4', cwd: '/live/d', procStart: 'Thu Nov 12 10:00:00 2026' })
+  const { rows } = sessions.collect({ env: w.env, now: NOW, starts: () => new Map([[104, 'Thu Nov 12 10:00:00 2026']]) })
+  const byId = Object.fromEntries(rows.map(row => [row.sessionId, row]))
+  assert.equal(byId['bbbbbbbb-2'].cwd, '/Users/me')
+  assert.match(sessions.openSession(byId['bbbbbbbb-2'], { env: {} }), /Resume it with: cd \/Users\/me && claude --resume bbbbbbbb-2$/)
+  assert.equal(byId['cccccccc-3'].cwd, '/Users/me/c')
+  assert.equal(byId['dddddddd-4'].cwd, '/live/d')
 })
 
 test('a Codex list is listed with its thread folder and title; a Claude mirror in the state directory is not', async t => {

@@ -5,7 +5,7 @@ const { readDue } = require('../shared/window-tool.js')
 const { localDay } = require('../shared/due.js')
 const { toCounters } = require('../shared/plan.js')
 
-const usage = '/todo show | /todo done <ids> | /todo skip <ids> | /todo due <ids> <date|clear> | /todo prune | /todo clear | /todo help'
+const usage = '/todo show | /todo sessions | /todo done <ids> | /todo skip <ids> | /todo due <ids> <date|clear> | /todo prune | /todo clear | /todo help'
 
 // Whether the session's list belongs to Claude: its mod writes the state file and overwrites any
 // change made to it here, so changes go through the inbox instead.
@@ -36,10 +36,13 @@ async function change(sessionId, op, ids = [], env = process.env, due = null) {
   return parts.length === 0 ? (op === 'prune' ? 'Removed 0 completed items.' : 'Nothing was changed.') : parts.join(' ')
 }
 
+// Runs one `/todo` command typed in the pane; answers the notice, or for `sessions` a page to switch
+// to (`{ page, text }`), which needs no conversation of its own.
 async function execute(text, sessionId, env = process.env) {
   const [word = '', ...rest] = String(text).trim().replace(/^\/todo(?:\s+|$)/i, '').split(/[\s,]+/).filter(Boolean)
   const action = word.toLowerCase() || 'help'
   if (action === 'help') return usage
+  if (action === 'sessions' && rest.length === 0) return { page: 'sessions', text: '' }
   const takesIds = action === 'done' || action === 'skip' || action === 'due'
   if (!['show', 'prune', 'clear', 'done', 'skip', 'due'].includes(action) || (takesIds ? rest.length < (action === 'due' ? 2 : 1) : rest.length > 0)) throw new Error(usage)
   if (!sessionId) throw new Error('No conversation bound yet.')

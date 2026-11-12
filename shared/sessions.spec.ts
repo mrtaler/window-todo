@@ -107,6 +107,32 @@ test('a chunk read from the middle drops its cut first line; the end gives title
   assert.deepEqual(detailOf(merged), { cwd: '/start', title: 'From the end' })
 })
 
+test('only a working folder filed under the transcript project folder counts, the start one first', () => {
+  const folder = projectFolderName('/Users/me')
+  const moved = line({ type: 'user', message: { content: 'later' }, cwd: '/Users/me/.claude/plugins/store' })
+  const own = line({ type: 'assistant', cwd: '/Users/me' })
+  const noCwd = line({ type: 'file-history-snapshot', snapshot: {} })
+  // Without a project folder the first one named counts, as before.
+  assert.equal(scanTranscript([moved, own].join('\n')).cwd, '/Users/me/.claude/plugins/store')
+  assert.equal(scanTranscript([moved, own].join('\n'), false, folder).cwd, '/Users/me')
+  // A start without one and an end that names another folder before its own: the own one.
+  const tail = scanTranscript(['cut', moved, own].join('\n'), true, folder)
+  assert.equal(mergeFacts(tail, scanTranscript(noCwd, false, folder)).cwd, '/Users/me')
+  // The start one wins over the end one; `/Users_me` is filed under the same name.
+  const head = scanTranscript([noCwd, own].join('\n'), false, folder)
+  assert.equal(mergeFacts(scanTranscript(line({ cwd: '/Users_me' }), false, folder), head).cwd, '/Users/me')
+  // Only other folders: none from the transcript, so a running session's own folder stands in.
+  const other = mergeFacts(scanTranscript(moved, false, folder), scanTranscript(moved, false, folder))
+  assert.equal(other.cwd, undefined)
+  const rows = buildSessionRows({
+    stored: [stored('live', 1, listOf({ id: 'T1', kind: 'T' })), stored('gone', 2, listOf({ id: 'T1', kind: 'T' }))],
+    running: new Map<string, RunningSession>([['live', { sessionId: 'live', pid: 7, cwd: '/Users/me' }]]),
+    details: new Map<string, SessionDetail>([['live', detailOf(other)], ['gone', detailOf(other)]]),
+    today: TODAY,
+  })
+  assert.deepEqual(rows.map(row => [row.sessionId, row.cwd]), [['live', '/Users/me'], ['gone', undefined]])
+})
+
 test('a running process is the same one when ps agrees on its start, in whatever time zone', () => {
   const started = parsePsStart('58506 Tue Nov 10 23:06:52 2026    \n 4705 Thu Nov  5 16:23:45 2026\n')
   assert.equal(started.get(58506), 'Tue Nov 10 23:06:52 2026')

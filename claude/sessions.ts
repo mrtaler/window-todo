@@ -112,12 +112,18 @@ async function readPart($: EngineInterface, tool: 'tail' | 'head', bytes: number
   return stdout
 }
 
+// The facts of a transcript; only a working folder filed under the project folder the file lies in
+// counts. A start whose first records push the folder past HEAD_BYTES is read again up to
+// HEAD_PROMPT_BYTES.
 async function transcriptFacts($: EngineInterface, file: string): Promise<TranscriptFacts> {
+  const projectFolder = file.split('/').at(-2) ?? ''
   const { size } = await $.fs.stat(file)
-  if (size <= FS_READ_MAX) return scanTranscript(await $.fs.read(file))
-  let tail = scanTranscript(await readPart($, 'tail', TAIL_BYTES, file), true)
-  if (!hasTitle(tail)) tail = scanTranscript(await readPart($, 'tail', FS_READ_MAX, file), true)
-  const head = scanTranscript(await readPart($, 'head', hasTitle(tail) ? HEAD_BYTES : HEAD_PROMPT_BYTES, file))
+  if (size <= FS_READ_MAX) return scanTranscript(await $.fs.read(file), false, projectFolder)
+  let tail = scanTranscript(await readPart($, 'tail', TAIL_BYTES, file), true, projectFolder)
+  if (!hasTitle(tail)) tail = scanTranscript(await readPart($, 'tail', FS_READ_MAX, file), true, projectFolder)
+  const headBytes = hasTitle(tail) ? HEAD_BYTES : HEAD_PROMPT_BYTES
+  let head = scanTranscript(await readPart($, 'head', headBytes, file), false, projectFolder)
+  if (head.cwd === undefined && headBytes < HEAD_PROMPT_BYTES) head = scanTranscript(await readPart($, 'head', HEAD_PROMPT_BYTES, file), false, projectFolder)
 
   return mergeFacts(tail, head)
 }
