@@ -49,3 +49,29 @@ test('the panel accepts local slash commands through its input interface', async
   assert.match(panel.stdout, /0 open/)
   assert.equal(store.read('one', f.dir).window.items.length, 0)
 })
+
+test('the Codex window tool takes a day on add and op due, and /todo due sets or clears it', async t => {
+  const f = fixture(t)
+  const reply = await call('window', { sessionId: 'one', op: 'add', kind: 'W', title: 'Answer from DBA', due: '2031-11-15' }, { env: f.env })
+  assert.match(reply, /W1 \[open\] Answer from DBA \(come back on 2031-11-15\)/)
+  await call('window', { sessionId: 'one', op: 'add', kind: 'T', title: 'Task' }, { env: f.env })
+  assert.match(await call('window', { sessionId: 'one', op: 'due', ids: ['T1'], due: '2031-01-02' }, { env: f.env }), /Changed: T1\./)
+  await assert.rejects(call('window', { sessionId: 'one', op: 'due', ids: ['T1'], due: 'someday' }, { env: f.env }), /not a date/)
+  assert.equal(await execute('/todo due W1 clear', 'one', f.env), 'Day cleared: W1.')
+  assert.equal(await execute('/todo due T1, W1 2031-12-24', 'one', f.env), 'Day 2031-12-24 set: W1, T1.')
+  await assert.rejects(execute('/todo due W1', 'one', f.env), /\/todo due <ids> <date\|clear>/)
+  assert.deepEqual(store.read('one', f.dir).window.items.map(item => item.due), ['2031-12-24', '2031-12-24'])
+  const { tools } = require(path.join(adapter, 'service.cjs'))
+  assert.deepEqual(tools.find(tool => tool.name === 'window').inputSchema.properties.op.enum, ['show', 'add', 'done', 'skip', 'prune', 'due'])
+})
+
+test('/todo due on a Claude list goes through the inbox with the day it sets', async t => {
+  const f = fixture(t)
+  const state = { ...store.emptyState('claude'), client: 'claude', window: { items: [{ id: 'W1', kind: 'W', title: 'x', isDone: false }], issued: { T: 0, F: 0, Q: 0, W: 1 } } }
+  fs.mkdirSync(f.dir, { recursive: true })
+  fs.writeFileSync(store.filename('claude', f.dir), JSON.stringify(state))
+  assert.equal(await execute('/todo due W1 2031-11-15', 'claude', f.env), 'Day 2031-11-15: W1. Claude applies it within a few seconds.')
+  await execute('/todo due W1 clear', 'claude', f.env)
+  const inbox = require(path.join(adapter, 'inbox.cjs'))
+  assert.deepEqual(inbox.read('claude', f.dir).map(entry => [entry.op, entry.ids, entry.due]), [['due', ['W1'], '2031-11-15'], ['due', ['W1'], undefined]])
+})

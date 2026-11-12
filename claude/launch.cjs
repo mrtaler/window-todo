@@ -47,7 +47,7 @@ function chooseSession(args) {
 
 // Builds dist/ (the pane and the shared core) when it is missing, as in a fresh plugin install.
 function ensureBuilt(base = root) {
-  const needed = ['dist/codex/panel.cjs', 'dist/codex/inbox.cjs', 'dist/codex/tmux.cjs', 'dist/shared/inbox.js']
+  const needed = ['dist/codex/panel.cjs', 'dist/codex/inbox.cjs', 'dist/codex/tmux.cjs', 'dist/codex/sessions.cjs', 'dist/shared/inbox.js', 'dist/shared/sessions.js']
   if (needed.every(file => fs.existsSync(path.join(base, file)))) return
   const hint = `Build it with: cd ${JSON.stringify(base)} && npm ci && npm run build`
   if (!fs.existsSync(path.join(base, 'node_modules', 'typescript'))) throw new Error(`The window-todo pane is not built and TypeScript is not installed. ${hint}`)

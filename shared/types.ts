@@ -41,6 +41,7 @@ export type ActivityState = {
 export type PlanToolState = { name: string | null; offered: boolean }
 // The window list: open items of this window, kept per session. Kinds are tasks, findings,
 // questions and waits; `issued` holds the last number handed out per kind, so an id is never reused.
+// `due` is the day to come back on (`YYYY-MM-DD`), mostly for a W item; absent when none is set.
 export type WindowKind = 'T' | 'F' | 'Q' | 'W'
-export type WindowItem = { id: string; kind: WindowKind; title: string; isDone: boolean }
+export type WindowItem = { id: string; kind: WindowKind; title: string; isDone: boolean; due?: string }
 export type WindowList = { items: WindowItem[]; issued: { T: number; F: number; Q: number; W: number } }

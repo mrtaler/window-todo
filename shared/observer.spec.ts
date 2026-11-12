@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyObserverChange, OBSERVER_TEXT_MAX, observerPrompt, parseObserverReply } from './observer';
-import { addItem, displayOrder, emptyWindow } from './window';
+import { addItem, displayOrder, emptyWindow, setDue } from './window';
 import type { WindowList } from './window';
 const listOf = (...titles: Array<[
     Parameters<typeof addItem>[1],
@@ -57,3 +57,17 @@ test('the prompt carries the list with ids and clips long texts keeping the star
     assert.ok(prompt.includes('previous turn, which this turn\'s user message may reply to:\n(none)'));
     assert.ok(prompt.length < OBSERVER_TEXT_MAX + 1000);
 });
+
+test('the observer keeps the day of the items it closes, skips or leaves, and adds none', () => {
+  const start = listOf(['W', 'Answer from DBA'], ['W', 'CI run'], ['T', 'Task'])
+  const withDays = setDue(setDue(start, ['W1'], '2026-11-15').list, ['W2'], '2026-11-20').list
+  // A reply that names a day for a new item is read without it: the observer does not set days.
+  const change = parseObserverReply('{"done":["W2"],"skip":["W1"],"add":[{"kind":"W","title":"Deploy","due":"2026-11-30"}]}')
+  assert.notEqual(change, null)
+  const next = applyObserverChange(withDays, change ?? { done: [], skip: [], add: [] })
+  assert.deepEqual(
+    next.items.map(item => [item.id, item.isDone, item.due]),
+    [['W2', true, '2026-11-20'], ['T1', false, undefined], ['W1', false, '2026-11-15'], ['W3', false, undefined]],
+  )
+  assert.equal('due' in (next.items.at(-1) ?? {}), false)
+})

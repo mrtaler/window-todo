@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addItem, closeItems, describeWindow, displayOrder, emptyWindow, hasOpenQuestion, normaliseId, parseStoredWindow, pruneDone, skipItems, windowLines, windowStatus, } from './window';
+import { addItem, closeItems, describeWindow, displayOrder, dueItems, emptyWindow, hasOpenQuestion, nearestDue, normaliseId, parseStoredWindow, pruneDone, setDue, skipItems, windowLines, windowStatus, } from './window';
 import type { WindowKind, WindowList } from './window';
 // Adds items in order and fails the test on a refused add.
 const withItems = (entries: Array<[
@@ -103,3 +103,78 @@ test('a stored value of another shape is not a list', () => {
     assert.equal(parseStoredWindow({ items: [], issued: { T: 0 } }), null);
     assert.equal(parseStoredWindow({ items: [{ id: 'Z1', kind: 'Z', title: 't', isDone: false }], issued: { T: 0, F: 0, Q: 0, W: 0 } }), null);
 });
+
+// Days to come back on (due).
+const TODAY = '2026-11-12'
+const dated = (): WindowList => {
+  let list = withItems([['T', 'Plain task']])
+  for (const [title, due] of [['Answer from DBA', '2026-11-15'], ['Deploy window', TODAY], ['Review', '2026-11-10']] as const) {
+    const added = addItem(list, 'W', title, due)
+    if ('error' in added) throw new Error(added.error)
+    list = added.list
+  }
+
+  return list
+}
+
+test('an add may carry a day, which must be a real ISO day', () => {
+  const list = dated()
+  assert.deepEqual(list.items.map(item => item.due), [undefined, '2026-11-15', TODAY, '2026-11-10'])
+  assert.equal('due' in (list.items[0] ?? {}), false)
+  assert.deepEqual(addItem(emptyWindow(), 'W', 'x', '11-15'), { error: 'The date is not a YYYY-MM-DD day.' })
+})
+
+test('setDue sets and clears the day of the named items and reports the unknown ones', () => {
+  const set = setDue(dated(), ['t1', 'W9'], '2026-12-01')
+  assert.deepEqual(set.changed, ['T1'])
+  assert.deepEqual(set.unknown, ['W9'])
+  assert.equal(set.list.items[0]?.due, '2026-12-01')
+  const cleared = setDue(set.list, ['W1', 'T1'], null)
+  assert.deepEqual(cleared.changed, ['T1', 'W1'])
+  assert.equal(cleared.list.items.some(item => item.id === 'W1' && 'due' in item), false)
+  assert.deepEqual(setDue(cleared.list, ['W1'], null).changed, [])
+})
+
+test('closing, skipping and pruning keep the day of every item they keep', () => {
+  const closed = closeItems(dated(), ['W2']).list
+  assert.equal(closed.items.find(item => item.id === 'W2')?.due, TODAY)
+  const skipped = skipItems(closed, ['W1']).list
+  assert.equal(skipped.items.at(-1)?.due, '2026-11-15')
+  assert.deepEqual(pruneDone(skipped).list.items.map(item => item.due), [undefined, '2026-11-10', '2026-11-15'])
+})
+
+test('the pane row shows the day after the title, red once passed and yellow on the day', () => {
+  const lines = windowLines(dated(), 40, 'claude', TODAY)
+  const row = (id: string) => lines.find(line => line.text.includes(` ${id} `))
+  assert.match(row('W1')?.text ?? '', /Answer from DBA · 11-15$/)
+  assert.equal(row('W1')?.segments.at(-1)?.color, undefined)
+  assert.equal(row('W1')?.segments.at(-1)?.dim, true)
+  assert.equal(row('W2')?.segments.at(-1)?.color, 'yellow')
+  assert.equal(row('W3')?.segments.at(-1)?.color, 'red')
+  assert.equal(row('T1')?.segments.some(s => s.text.includes('·')), false)
+  assert.equal(lines.every(line => line.text.length <= 40), true)
+  // A long title gives way to the day, which stays whole.
+  const long = addItem(emptyWindow(), 'W', 'x'.repeat(80), '2026-11-15')
+  const longLine = windowLines('list' in long ? long.list : emptyWindow(), 30, 'claude', TODAY)[1]
+  assert.equal(longLine?.text.length, 30)
+  assert.match(longLine?.text ?? '', /… · 11-15$/)
+  // A done item draws no day.
+  const closed = windowLines(closeItems(dated(), ['W3']).list, 40, 'claude', TODAY)
+  assert.doesNotMatch(closed.find(line => line.text.includes(' W3 '))?.text ?? '', /11-10/)
+})
+
+test('the status line counts the open items whose day has come', () => {
+  assert.equal(windowStatus(dated(), TODAY), 'T1 W3 (2 due)')
+  assert.equal(windowStatus(dated()), 'T1 W3')
+  assert.equal(windowStatus(closeItems(dated(), ['W2', 'W3']).list, TODAY), 'T1 W1')
+  assert.deepEqual(dueItems(dated(), TODAY).map(item => item.id), ['W2', 'W3'])
+  assert.equal(nearestDue(closeItems(dated(), ['W3']).list), TODAY)
+})
+
+test('a stored day comes back, and one of another shape is dropped with the item kept', () => {
+  const restored = parseStoredWindow(JSON.parse(JSON.stringify(dated())))
+  assert.deepEqual(restored?.items.map(item => item.due), [undefined, '2026-11-15', TODAY, '2026-11-10'])
+  const odd = parseStoredWindow({ items: [{ id: 'W1', kind: 'W', title: 't', isDone: false, due: 'soon' }], issued: { T: 0, F: 0, Q: 0, W: 1 } })
+  assert.deepEqual(odd?.items, [{ id: 'W1', kind: 'W', title: 't', isDone: false }])
+  assert.match(describeWindow(dated()), /W1 \[open\] Answer from DBA \(come back on 2026-11-15\)/)
+})

@@ -1,32 +1,35 @@
 const store = require('./state.cjs')
 const inbox = require('./inbox.cjs')
-const { closeItems, pruneDone, skipItems } = require('../shared/window.js')
+const { closeItems, pruneDone, setDue, skipItems } = require('../shared/window.js')
+const { readDue } = require('../shared/window-tool.js')
+const { localDay } = require('../shared/due.js')
 const { toCounters } = require('../shared/plan.js')
 
-const usage = '/todo show | /todo done <ids> | /todo skip <ids> | /todo prune | /todo clear | /todo help'
+const usage = '/todo show | /todo done <ids> | /todo skip <ids> | /todo due <ids> <date|clear> | /todo prune | /todo clear | /todo help'
 
 // Whether the session's list belongs to Claude: its mod writes the state file and overwrites any
 // change made to it here, so changes go through the inbox instead.
 const ownedByClaude = state => state.client === 'claude'
 
-// Marks items done or skipped (moved down), or prunes the done ones. A Codex list changes in the
-// state file at once; a Claude list through the inbox, applied by the mod. Answers the notice.
-async function change(sessionId, op, ids = [], env = process.env) {
+// Marks items done or skipped (moved down), sets or clears their day (`due`, an ISO day or null),
+// or prunes the done ones. A Codex list changes in the state file at once; a Claude list through
+// the inbox, applied by the mod. Answers the notice.
+async function change(sessionId, op, ids = [], env = process.env, due = null) {
   sessionId = store.sessionFrom({ sessionId }, env)
   const dir = store.directory(env)
   const state = store.read(sessionId, dir)
   if (ownedByClaude(state)) {
-    await inbox.append(sessionId, op, ids, inbox.appliedOf(state), dir)
-    const what = op === 'prune' ? 'Prune' : `${op === 'done' ? 'Done' : 'Skip'}: ${ids.join(', ')}`
+    await inbox.append(sessionId, op, ids, inbox.appliedOf(state), dir, op === 'due' ? due : null)
+    const what = op === 'prune' ? 'Prune' : op === 'due' ? `${due ? `Day ${due}` : 'Day cleared'}: ${ids.join(', ')}` : `${op === 'done' ? 'Done' : 'Skip'}: ${ids.join(', ')}`
     return `${what}. Claude applies it within a few seconds.`
   }
   const out = await store.change(sessionId, current => {
-    const result = op === 'done' ? closeItems(current.window, ids) : op === 'skip' ? skipItems(current.window, ids) : pruneDone(current.window)
+    const result = op === 'done' ? closeItems(current.window, ids) : op === 'skip' ? skipItems(current.window, ids) : op === 'due' ? setDue(current.window, ids, due) : pruneDone(current.window)
     current.window = result.list
     return result
   }, dir)
   const { changed, unknown } = out.result
-  const label = op === 'done' ? 'Closed' : op === 'skip' ? 'Moved down' : 'Removed'
+  const label = op === 'done' ? 'Closed' : op === 'skip' ? 'Moved down' : op === 'due' ? (due ? `Day ${due} set` : 'Day cleared') : 'Removed'
   const parts = []
   if (changed.length > 0) parts.push(op === 'prune' ? `Removed ${changed.length} completed items.` : `${label}: ${changed.join(', ')}.`)
   if (unknown.length > 0) parts.push(`Not in the list: ${unknown.join(', ')}.`)
@@ -37,11 +40,17 @@ async function execute(text, sessionId, env = process.env) {
   const [word = '', ...rest] = String(text).trim().replace(/^\/todo(?:\s+|$)/i, '').split(/[\s,]+/).filter(Boolean)
   const action = word.toLowerCase() || 'help'
   if (action === 'help') return usage
-  const takesIds = action === 'done' || action === 'skip'
-  if (!['show', 'prune', 'clear', 'done', 'skip'].includes(action) || (takesIds ? rest.length === 0 : rest.length > 0)) throw new Error(usage)
+  const takesIds = action === 'done' || action === 'skip' || action === 'due'
+  if (!['show', 'prune', 'clear', 'done', 'skip', 'due'].includes(action) || (takesIds ? rest.length < (action === 'due' ? 2 : 1) : rest.length > 0)) throw new Error(usage)
   if (!sessionId) throw new Error('No conversation bound yet.')
   sessionId = store.sessionFrom({ sessionId }, env)
   const dir = store.directory(env)
+  if (action === 'due') {
+    // The last word is the day; the words before it are the ids.
+    const day = readDue(rest.at(-1), localDay(Date.now()))
+    if (day.error) throw new Error(day.error)
+    return change(sessionId, 'due', rest.slice(0, -1), env, day.due)
+  }
   if (action === 'show') {
     const state = store.read(sessionId, dir)
     const open = state.window.items.filter(item => !item.isDone).length

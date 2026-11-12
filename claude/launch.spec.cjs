@@ -54,7 +54,7 @@ test('a folder without the built pane and without TypeScript gets a build instru
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'window-todo-launch-'))
   t.after(() => fs.rmSync(base, { recursive: true, force: true }))
   assert.throws(() => ensureBuilt(base), /npm ci && npm run build/)
-  for (const file of ['dist/codex/panel.cjs', 'dist/codex/inbox.cjs', 'dist/codex/tmux.cjs', 'dist/shared/inbox.js']) {
+  for (const file of ['dist/codex/panel.cjs', 'dist/codex/inbox.cjs', 'dist/codex/tmux.cjs', 'dist/codex/sessions.cjs', 'dist/shared/inbox.js', 'dist/shared/sessions.js']) {
     fs.mkdirSync(path.dirname(path.join(base, file)), { recursive: true })
     fs.writeFileSync(path.join(base, file), '')
   }

@@ -1,15 +1,17 @@
 import type { WindowList } from './types'
-import { closeItems, pruneDone, skipItems } from './window'
+import { closeItems, pruneDone, setDue, skipItems } from './window'
+import { isIsoDay } from './due'
 
 // The inbox: changes to the window list asked for outside the client that owns the list (the
 // terminal pane), waiting for that client to apply them. The pane is the only writer of the inbox
 // file; the client only reads it and reports the last sequence number it applied in the state
 // file, after which the pane drops the applied entries. No side ever has to delete what the other
 // may be writing.
-export type InboxOp = 'done' | 'skip' | 'prune'
-export type InboxEntry = { seq: number; op: InboxOp; ids: string[]; at: number }
+// A `due` entry carries the day it sets, resolved by the pane; without one it clears the day.
+export type InboxOp = 'done' | 'skip' | 'prune' | 'due'
+export type InboxEntry = { seq: number; op: InboxOp; ids: string[]; at: number; due?: string }
 
-export const INBOX_OPS: readonly InboxOp[] = ['done', 'skip', 'prune']
+export const INBOX_OPS: readonly InboxOp[] = ['done', 'skip', 'prune', 'due']
 // Bounds what one inbox can ask for, so a runaway pane cannot grow the file without limit.
 export const INBOX_MAX_ENTRIES = 200
 const INBOX_MAX_IDS = 50
@@ -29,7 +31,8 @@ export const parseInbox = (value: unknown, sessionId: string): InboxEntry[] => {
     if (!Number.isSafeInteger(entry.seq) || Number(entry.seq) <= 0 || !isOp(entry.op)) continue
     const ids = Array.isArray(entry.ids) ? entry.ids.filter((id): id is string => typeof id === 'string').slice(0, INBOX_MAX_IDS) : []
     if (entry.op !== 'prune' && ids.length === 0) continue
-    entries.push({ seq: Number(entry.seq), op: entry.op, ids, at: typeof entry.at === 'number' ? entry.at : 0 })
+    const due = entry.op === 'due' && isIsoDay(entry.due) ? { due: entry.due } : {}
+    entries.push({ seq: Number(entry.seq), op: entry.op, ids, at: typeof entry.at === 'number' ? entry.at : 0, ...due })
   }
 
   return entries.sort((a, b) => a.seq - b.seq)
@@ -50,7 +53,13 @@ export const applyInboxEntries = (
   const changed: string[] = []
   for (const entry of entries) {
     const result =
-      entry.op === 'done' ? closeItems(current, entry.ids) : entry.op === 'skip' ? skipItems(current, entry.ids) : pruneDone(current)
+      entry.op === 'done'
+        ? closeItems(current, entry.ids)
+        : entry.op === 'skip'
+          ? skipItems(current, entry.ids)
+          : entry.op === 'due'
+            ? setDue(current, entry.ids, entry.due ?? null)
+            : pruneDone(current)
     current = result.list
     changed.push(...result.changed)
     applied = Math.max(applied, entry.seq)
