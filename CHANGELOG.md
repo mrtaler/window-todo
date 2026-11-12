@@ -1,3 +1,10 @@
+## [0.11.0](https://github.com/mrtaler/window-todo/compare/v0.10.0...v0.11.0) (2026-11-12)
+
+### Features
+
+* **claude:** carry the open window items into the session a /clear starts ([a11fa40](https://github.com/mrtaler/window-todo/commit/a11fa40a1f367f5a1869479aff46222f939e36fe))
+* list the sessions to come back to and give window items a come-back day ([c1503df](https://github.com/mrtaler/window-todo/commit/c1503df097f3e1901e7328036e2d0ab61b1628fe))
+
 ## [0.10.0](https://github.com/mrtaler/window-todo/compare/v0.9.0...v0.10.0) (2026-11-10)
 
 ### Features
