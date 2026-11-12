@@ -1,6 +1,7 @@
 import type { WindowItem, WindowKind, WindowList } from './types'
 import { clean } from './sanitize'
 import type { Seg, TreeLine } from './tree'
+import { dueColor, dueState, earliestDue, isIsoDay, shortDue } from './due'
 
 export type { WindowItem, WindowKind, WindowList }
 
@@ -37,18 +38,21 @@ export const parseKind = (raw: string): WindowKind | null => {
 }
 
 // Adds one open item at the end with the next number of its kind. The number comes from
-// `issued`, never from the items present, so an id is never handed out twice.
+// `issued`, never from the items present, so an id is never handed out twice. `due` is an ISO day
+// the caller has already read (see parseDue).
 export const addItem = (
   list: WindowList,
   kind: WindowKind,
   rawTitle: string,
+  due?: string,
 ): { list: WindowList; id: string } | { error: string } => {
   const title = clean(rawTitle)
   if (title === '') return { error: 'The title is empty.' }
   if (title.length > WINDOW_TITLE_MAX) return { error: `The title is longer than ${WINDOW_TITLE_MAX} characters.` }
+  if (due !== undefined && !isIsoDay(due)) return { error: 'The date is not a YYYY-MM-DD day.' }
   const number = list.issued[kind] + 1
   const id = `${kind}${number}`
-  const item: WindowItem = { id, kind, title, isDone: false }
+  const item: WindowItem = { id, kind, title, isDone: false, ...(due !== undefined ? { due } : {}) }
 
   return { list: { items: [...list.items, item], issued: { ...list.issued, [kind]: number } }, id }
 }
@@ -85,6 +89,29 @@ export const skipItems = (list: WindowList, rawIds: readonly string[]): WindowRe
   return { list: { ...list, items: [...rest, ...moved] }, changed: moved.map(item => item.id), unknown }
 }
 
+// Sets the day to come back on for the named items, or clears it with null. `changed` names the
+// items whose day changed.
+export const setDue = (list: WindowList, rawIds: readonly string[], due: string | null): WindowResult => {
+  const { known, unknown } = resolveIds(list, rawIds)
+  const target = due ?? undefined
+  const changed = list.items.filter(item => known.has(item.id) && item.due !== target).map(item => item.id)
+  const items = list.items.map(item => {
+    if (!known.has(item.id)) return item
+    const { due: _previous, ...rest } = item
+
+    return target === undefined ? rest : { ...rest, due: target }
+  })
+
+  return { list: { ...list, items }, changed, unknown }
+}
+
+// The open items whose day has come: due today or earlier.
+export const dueItems = (list: WindowList, today: string): WindowItem[] =>
+  openItems(list).filter(item => item.due !== undefined && item.due <= today)
+
+// The earliest day among the open items, or undefined when none carries one.
+export const nearestDue = (list: WindowList): string | undefined => earliestDue(openItems(list).map(item => item.due))
+
 // Removes the done items, so a long window fits the pane again. `issued` is kept, so a removed
 // id is still never handed out again.
 export const pruneDone = (list: WindowList): WindowResult => {
@@ -112,18 +139,31 @@ const shorten = (text: string, max: number): string => {
   return max <= 1 ? '…' : `${text.slice(0, max - 1)}…`
 }
 
+// The ` · MM-DD` tail of an open item with a day, coloured when the day has come; [] otherwise.
+// Without `today` the day is shown uncoloured.
+export const dueSegments = (item: WindowItem, today?: string): Seg[] => {
+  if (item.due === undefined || item.isDone) return []
+  const state = today === undefined ? 'later' : dueState(item.due, today)
+  const color = dueColor(state)
+
+  return [seg(' · ', { dim: true }), seg(today === undefined ? item.due : shortDue(item.due, today), color === undefined ? { dim: true } : { color, bold: true })]
+}
+
 // The pane section: a header, then one row per item. Nothing at all for an empty list, so a
-// window that never used the list keeps the pane as the plan alone.
-export const windowLines = (list: WindowList, width: number, accent: string): TreeLine[] => {
+// window that never used the list keeps the pane as the plan alone. `today` colours the days that
+// have come.
+export const windowLines = (list: WindowList, width: number, accent: string, today?: string): TreeLine[] => {
   if (list.items.length === 0) return []
   const rows = displayOrder(list).map(item => {
     const mark = item.isDone ? '✓' : '○'
     const prefix = `${mark} ${item.id} `
-    const title = shorten(item.title, Math.max(1, width - prefix.length))
+    const tail = dueSegments(item, today)
+    const tailLength = tail.reduce((sum, part) => sum + part.text.length, 0)
+    const title = shorten(item.title, Math.max(1, width - prefix.length - tailLength))
 
     return item.isDone
       ? lineOf([seg(prefix, { dim: true }), seg(title, { dim: true, strikethrough: true })])
-      : lineOf([seg(`${mark} `), seg(item.id, { color: accent, bold: true }), seg(` ${title}`)])
+      : lineOf([seg(`${mark} `), seg(item.id, { color: accent, bold: true }), seg(` ${title}`), ...tail])
   })
 
   return [lineOf([seg(WINDOW_HEADER, { bold: true })]), ...rows]
@@ -132,16 +172,19 @@ export const windowLines = (list: WindowList, width: number, accent: string): Tr
 // Rows the section takes in the pane: a blank separator, the header and one per item.
 export const windowRowCount = (list: WindowList): number => (list.items.length === 0 ? 0 : list.items.length + 2)
 
-// The status line part: open items per kind, for example `T2 F1 Q1`; undefined when none is open.
-export const windowStatus = (list: WindowList): string | undefined => {
+// The status line part: open items per kind, for example `T2 F1 Q1`, then how many open items
+// have come due by `today` (`W2 (1 due)`); undefined when none is open.
+export const windowStatus = (list: WindowList, today?: string): string | undefined => {
   const open = openItems(list)
   const parts = WINDOW_KINDS.flatMap(kind => {
     const count = open.filter(item => item.kind === kind).length
 
     return count === 0 ? [] : [`${kind}${count}`]
   })
+  if (parts.length === 0) return undefined
+  const due = today === undefined ? 0 : dueItems(list, today).length
 
-  return parts.length === 0 ? undefined : parts.join(' ')
+  return due === 0 ? parts.join(' ') : `${parts.join(' ')} (${due} due)`
 }
 
 // The list as the model reads it: one line per item, open first.
@@ -149,7 +192,7 @@ export const describeWindow = (list: WindowList): string => {
   if (list.items.length === 0) return 'The window list is empty.'
 
   return displayOrder(list)
-    .map(item => `${item.id} [${item.isDone ? 'done' : 'open'}] ${item.title}`)
+    .map(item => `${item.id} [${item.isDone ? 'done' : 'open'}] ${item.title}${item.due !== undefined ? ` (come back on ${item.due})` : ''}`)
     .join('\n')
 }
 
@@ -167,7 +210,8 @@ export const parseStoredWindow = (value: unknown): WindowList | null => {
     const kind = typeof entry.kind === 'string' ? parseKind(entry.kind) : null
     const id = typeof entry.id === 'string' ? normaliseId(entry.id) : null
     if (kind === null || id === null || typeof entry.title !== 'string' || typeof entry.isDone !== 'boolean') return null
-    items.push({ id, kind, title: entry.title, isDone: entry.isDone })
+    // A day of another shape is dropped; the item itself is kept.
+    items.push({ id, kind, title: entry.title, isDone: entry.isDone, ...(isIsoDay(entry.due) ? { due: entry.due } : {}) })
   }
 
   return {

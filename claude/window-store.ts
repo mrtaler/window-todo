@@ -148,8 +148,10 @@ export async function forgetWindow($: EngineInterface): Promise<void> {
 }
 
 // Deletes the stored lists of other sessions not changed for WINDOW_MAX_AGE_MS, and the carries
-// older than CARRY_MAX_AGE_MS (left by a process that ended before it took its own). An entry
-// that is not a list or a carry is left alone: it is not this layer's to judge.
+// older than CARRY_MAX_AGE_MS (left by a process that ended before it took its own). A list with an
+// open item that has a day to come back on is kept however old, whether the day has passed or not:
+// its session waits on something. An entry that is not a list or a carry is left alone: it is not
+// this layer's to judge.
 export async function sweepWindows($: EngineInterface): Promise<void> {
   const [sessionId, now, keys] = await Promise.all([$.session.id(), $.clock.now(), $.store.keys()])
   for (const key of keys) {
@@ -160,6 +162,8 @@ export async function sweepWindows($: EngineInterface): Promise<void> {
     }
     if (!key.startsWith(WINDOW_STORE_PREFIX) || key === storeKey(sessionId)) continue
     const stored = parseStored(await $.store.get(key))
-    if (stored !== null && now - stored.updatedAt > WINDOW_MAX_AGE_MS) await $.store.delete(key)
+    if (stored === null || now - stored.updatedAt <= WINDOW_MAX_AGE_MS) continue
+    if (openItems(stored.list).some(item => item.due !== undefined)) continue
+    await $.store.delete(key)
   }
 }

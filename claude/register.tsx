@@ -34,11 +34,14 @@ import {
   KIND_NAMES,
   parseKind,
   pruneDone,
+  setDue,
   skipItems,
   windowLines,
   windowRowCount,
   windowStatus,
 } from '../shared/window'
+import { DUE_FORMS, localDay } from '../shared/due'
+import { sessionsReport } from './sessions'
 import type { WindowList, WindowResult } from '../shared/window'
 import { changeWindow, currentWindow, dropCarry, forgetWindow, readWindow, stashCarry, sweepWindows } from './window-store'
 import {
@@ -51,6 +54,7 @@ import type { ObserverTurn } from '../shared/observer'
 import { asksUser, STOP_NUDGE } from './stop'
 import {
   parseWindowInput,
+  readDue,
   WINDOW_INPUT_SCHEMA,
   WINDOW_TOOL_DESCRIPTION,
   WINDOW_TOOL_SHORT_NAME,
@@ -71,7 +75,8 @@ const LOG_LIMIT = 4000
 const ASK_TOOL = 'AskUserQuestion'
 const USAGE =
   'Usage: /todo (opens the pane) | /todo clear | /todo off | /todo on | /todo color <name|#hex|reset>' +
-  ' | /todo add <T|F|Q|W> <title> | /todo done <ids> | /todo skip <ids> | /todo prune'
+  ' | /todo add <T|F|Q|W> <title> [--on <date>] | /todo done <ids> | /todo skip <ids> | /todo due <ids> <date|clear>' +
+  ` | /todo prune | /todo sessions (a date is ${DUE_FORMS})`
 const unknownColorText = (value: string): string =>
   `Unknown color "${value}". Use a name (red, green, yellow, blue, magenta, cyan, white, gray, claude, or a ...Bright variant) or #rrggbb. For orange, try claude.`
 const NOT_OWNER_TEXT =
@@ -132,9 +137,14 @@ function isPlanTool(tool: string, stored: string | null): boolean {
   return tool === PLAN_TOOL_FULL_NAME || (stored !== null && tool === stored)
 }
 
+// Today's local date, which the window list's days are read and coloured against.
+async function today($: EngineInterface): Promise<string> {
+  return localDay(await $.clock.now())
+}
+
 async function refreshStatus($: EngineInterface): Promise<void> {
-  const [p, a, w] = await Promise.all([read($, plan), read($, activity), readWindow($)])
-  const parts = [statusLine(p, a), windowStatus(w)].filter((part): part is string => part !== undefined)
+  const [p, a, w, day] = await Promise.all([read($, plan), read($, activity), readWindow($), today($)])
+  const parts = [statusLine(p, a), windowStatus(w, day)].filter((part): part is string => part !== undefined)
   $.ui.status(parts.length === 0 ? undefined : parts.join(' · '))
   // Every change to the plan, the activity or the window list redraws the status line, so this is
   // the one place the terminal pane's file mirror is kept up to date. Off unless WINDOW_TODO_PANE=1.
@@ -176,8 +186,8 @@ function startInboxPoll($: EngineInterface): void {
 
 // The plan tree, then the window section below a blank row. The window section is kept whole
 // while the plan has room for at least its header; the plan is the part that shrinks.
-const paneLines = (p: Plan, a: ActivityState, w: WindowList, opts: TreeOptions): TreeLine[] => {
-  const section = windowLines(w, opts.width ?? DEFAULT_WIDTH, opts.accent ?? DEFAULT_ACCENT)
+const paneLines = (p: Plan, a: ActivityState, w: WindowList, opts: TreeOptions, day: string): TreeLine[] => {
+  const section = windowLines(w, opts.width ?? DEFAULT_WIDTH, opts.accent ?? DEFAULT_ACCENT, day)
   if (section.length === 0) return buildTree(p, a, opts)
   const planRoom = Math.max(2, opts.maxLines - section.length - 1)
 
@@ -285,7 +295,8 @@ async function runTodoCommand(
     return { text: `Plan pane opened.${tip}` }
   }
   if (word === 'prune') return runWindowCommand($, 'prune', '')
-  const windowCommand = /^(add|done|skip)(?:\s+|$)(.*)$/s.exec(raw)
+  if (word === 'sessions') return { text: await sessionsReport($) }
+  const windowCommand = /^(add|done|skip|due)(?:\s+|$)(.*)$/s.exec(raw)
   if (windowCommand !== null) return runWindowCommand($, (windowCommand[1] ?? '').toLowerCase(), windowCommand[2] ?? '')
   if (word === 'off' || word === 'on') {
     await update($, enforceSession, () => word === 'on')
@@ -300,7 +311,20 @@ async function runTodoCommand(
   return { text: 'Plan cleared.' }
 }
 
-// `/todo add <kind> <title>`, `/todo done <ids>`, `/todo skip <ids>` and `/todo prune` on the window list.
+// Takes `--on <date>` (or `--on=<date>`) out of the words of an add: the words left, and the date
+// as written; null when the flag has no date after it.
+const takeOnFlag = (words: string[]): { words: string[]; on?: string } | null => {
+  const at = words.findIndex(word => word === '--on' || word.startsWith('--on='))
+  if (at < 0) return { words }
+  const flag = words[at] ?? ''
+  const on = flag === '--on' ? words[at + 1] : flag.slice('--on='.length)
+  if (on === undefined || on === '') return null
+
+  return { words: words.filter((_, index) => index !== at && !(flag === '--on' && index === at + 1)), on }
+}
+
+// `/todo add <kind> <title> [--on <date>]`, `/todo done <ids>`, `/todo skip <ids>`,
+// `/todo due <ids> <date|clear>` and `/todo prune` on the window list.
 async function runWindowCommand($: EngineInterface, verb: string, rest: string): Promise<{ text: string }> {
   if (verb === 'prune') {
     let pruned: WindowResult | null = null
@@ -314,18 +338,22 @@ async function runWindowCommand($: EngineInterface, verb: string, rest: string):
     return { text: windowReply(verb, pruned) }
   }
   if (verb === 'add') {
-    const [rawKind = '', ...words] = rest.trim().split(/\s+/)
+    const [rawKind = '', ...allWords] = rest.trim().split(/\s+/)
     const kind = parseKind(rawKind)
-    if (kind === null) return { text: USAGE }
+    const flagged = takeOnFlag(allWords)
+    if (kind === null || flagged === null) return { text: USAGE }
+    const day = flagged.on === undefined ? undefined : readDue(flagged.on, await today($))
+    if (day !== undefined && 'error' in day) return { text: `${day.error} Nothing was added.` }
+    const due = day?.due ?? undefined
     let reply = ''
     await changeWindow($, list => {
-      const added = addItem(list, kind, words.join(' '))
+      const added = addItem(list, kind, flagged.words.join(' '), due)
       if ('error' in added) {
         reply = `${added.error} Nothing was added.`
 
         return list
       }
-      reply = `Added ${added.id} (${KIND_NAMES[kind]}).`
+      reply = `Added ${added.id} (${KIND_NAMES[kind]})${due !== undefined ? `, come back on ${due}` : ''}.`
 
       return added.list
     })
@@ -335,6 +363,22 @@ async function runWindowCommand($: EngineInterface, verb: string, rest: string):
   }
   const rawIds = rest.split(/[\s,]+/).filter(id => id !== '')
   if (rawIds.length === 0) return { text: USAGE }
+  if (verb === 'due') {
+    // The last word is the day; the words before it are the ids.
+    const rawDay = rawIds.pop() ?? ''
+    if (rawIds.length === 0) return { text: USAGE }
+    const day = readDue(rawDay, await today($))
+    if ('error' in day) return { text: `${day.error} Nothing was changed.` }
+    let dated: WindowResult | null = null
+    await changeWindow($, list => {
+      dated = setDue(list, rawIds, day.due)
+
+      return dated.list
+    })
+    await refreshStatus($)
+
+    return { text: windowReply(day.due === null ? 'undue' : 'due', dated, day.due) }
+  }
   let result: WindowResult | null = null
   await changeWindow($, list => {
     result = verb === 'done' ? closeItems(list, rawIds) : skipItems(list, rawIds)
@@ -346,10 +390,11 @@ async function runWindowCommand($: EngineInterface, verb: string, rest: string):
   return { text: windowReply(verb, result) }
 }
 
-const windowReply = (verb: string, result: WindowResult | null): string => {
+const windowReply = (verb: string, result: WindowResult | null, due: string | null = null): string => {
   if (result === null) return 'Nothing was changed.'
   const parts: string[] = []
-  const label = verb === 'done' ? 'Closed' : verb === 'prune' ? 'Removed' : 'Moved down'
+  const label =
+    verb === 'done' ? 'Closed' : verb === 'prune' ? 'Removed' : verb === 'due' ? `Come back on ${due ?? ''}` : verb === 'undue' ? 'Day cleared' : 'Moved down'
   if (result.changed.length > 0) parts.push(`${label}: ${result.changed.join(', ')}.`)
   if (result.unknown.length > 0) parts.push(`Not in the list: ${result.unknown.join(', ')}.`)
 
@@ -607,9 +652,12 @@ async function answerWindowCall($: EngineInterface, input: unknown, agentId: str
   const parsed = parseWindowInput(input)
   if ('error' in parsed) return `Error: ${parsed.error}`
   let reply = ''
+  const day = 'due' in parsed && parsed.due !== undefined ? readDue(parsed.due, await today($)) : undefined
+  if (day !== undefined && 'error' in day) return `Error: ${day.error} Nothing was changed.`
   if (parsed.op === 'add') {
+    const due = day?.due ?? undefined
     await changeWindow($, list => {
-      const added = addItem(list, parsed.kind, parsed.title)
+      const added = addItem(list, parsed.kind, parsed.title, due)
       if ('error' in added) {
         reply = `Error: ${added.error} Nothing was added.`
 
@@ -629,6 +677,16 @@ async function answerWindowCall($: EngineInterface, input: unknown, agentId: str
       return result.list
     })
     reply = windowReply(verb, result)
+  } else if (parsed.op === 'due') {
+    let dated: WindowResult | null = null
+    const ids = parsed.ids
+    const due = day?.due ?? null
+    await changeWindow($, list => {
+      dated = setDue(list, ids, due)
+
+      return dated.list
+    })
+    reply = windowReply(due === null ? 'undue' : 'due', dated, due)
   } else if (parsed.op === 'prune') {
     let pruned: WindowResult | null = null
     await changeWindow($, list => {
@@ -694,8 +752,8 @@ export const register: Register = (on, options) => {
       }
       await $.command.register({
         name: 'todo',
-        description: 'Show the plan pane, clear the plan, or turn plan enforcement off or on',
-        argumentHint: 'clear | off | on | color <name|#hex|reset>',
+        description: 'Show the plan pane, clear the plan, turn plan enforcement off or on, keep the window list, or list the sessions with open items',
+        argumentHint: 'clear | off | on | color <name|#hex|reset> | add | done | skip | due | prune | sessions',
       })
       // The pane opens unasked only on the terminal under a person at the prompt. The host leaves
       // an unasked open undrawn below 110 columns, so the first prompt (an open the person asked
@@ -972,11 +1030,12 @@ export const register: Register = (on, options) => {
       },
       async () => {
         const { Box, Text } = $.ui.resolve(e)
-        const [p, a, override, w] = await Promise.all([
+        const [p, a, override, w, day] = await Promise.all([
           read($, plan),
           read($, activity),
           read($, accentOverride),
           readWindow($),
+          today($),
         ])
         // The engine clips the body to scroll.bodyRows, so the tree must fit that and not the
         // whole terminal, or the bottom (usually the current step) is cut off silently.
@@ -1003,7 +1062,7 @@ export const register: Register = (on, options) => {
 
         return (
           <Box flexDirection="column">
-            {paneLines(p, a, w, { maxLines, width, accent }).map((line, i) => (
+            {paneLines(p, a, w, { maxLines, width, accent }, day).map((line, i) => (
               <Text key={`line-${i}`} wrap="truncate-end">
                 {line.segments.length === 1 && line.text === ''
                   ? ' '

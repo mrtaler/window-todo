@@ -68,3 +68,19 @@ test('entries apply in order and answer the highest sequence number', () => {
   assert.deepEqual(pruned.list.items.map(item => item.id), ['T3', 'T2'])
   assert.equal(applyInboxEntries(list(), []).applied, 0)
 })
+
+test('a due entry sets the day it carries, and one without a day clears it', () => {
+  const parsed = parseInbox(
+    inbox([
+      { seq: 1, op: 'due', ids: ['T1', 'T2'], due: '2026-11-15' },
+      { seq: 2, op: 'due', ids: ['T2'] },
+      { seq: 3, op: 'due', ids: ['T3'], due: 'soon' },
+    ]),
+    's1',
+  )
+  assert.deepEqual(parsed.map(entry => entry.due), ['2026-11-15', undefined, undefined])
+  const out = applyInboxEntries(list(), parsed)
+  assert.deepEqual(out.list.items.map(item => item.due), ['2026-11-15', undefined, undefined])
+  assert.deepEqual(out.changed, ['T1', 'T2', 'T2'])
+  assert.equal(out.applied, 3)
+})

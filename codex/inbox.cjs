@@ -29,16 +29,17 @@ function save(sessionId, entries, dir) {
   else store.writeAtomic(file, { version: 1, sessionId, entries })
 }
 
-// Queues one change. `applied` is what the state file reports, so the entry is numbered after
-// everything the client has seen even when the inbox file is gone. Answers the entry.
-async function append(sessionId, op, ids, applied, dir = store.directory()) {
+// Queues one change; `due` is the day a `due` entry sets (none clears it). `applied` is what the
+// state file reports, so the entry is numbered after everything the client has seen even when the
+// inbox file is gone. Answers the entry.
+async function append(sessionId, op, ids, applied, dir = store.directory(), due = null) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   const file = filename(sessionId, dir)
   return store.locked(file, () => {
     const entries = pendingEntries(read(sessionId, dir), applied)
     if (entries.length >= INBOX_MAX_ENTRIES) throw new Error('Too many changes are waiting for Claude; try again after its next turn.')
     const seq = Math.max(applied, ...entries.map(entry => entry.seq)) + 1
-    const entry = { seq, op, ids: [...ids], at: Date.now() }
+    const entry = { seq, op, ids: [...ids], at: Date.now(), ...(op === 'due' && due ? { due } : {}) }
     save(sessionId, [...entries, entry], dir)
     return entry
   })

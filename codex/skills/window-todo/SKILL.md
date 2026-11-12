@@ -17,6 +17,8 @@ Use `window` with `op: add` for open tasks (`T`), fixes (`F`), unanswered questi
 and external waits (`W`). Close answered or completed items with `done`; preserve
 deferred items with `skip`; `prune` removes closed items without reusing their IDs.
 Read the list with `show`. Keep the list concise and avoid duplicating plan steps.
+When the user names a day to come back on (mostly for a `W`), pass it as `due` on `add`, or
+set it later with `op: due`, `ids` and `due` (`"clear"` removes it); never invent a day.
 
 The pane is a separate terminal process; this plugin does not insert a native Codex sidebar.
 The Codex adapter uses explicit tool updates rather than the Claude Haiku observer.

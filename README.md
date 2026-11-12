@@ -57,6 +57,27 @@ Three ways fill the window list:
   as it is now.
 - **The command.** `/todo add <T|F|Q|W> <title>`, `/todo done <ids>`, `/todo skip <ids>`, `/todo prune` (removes the closed items).
 
+**Come-back dates.** An item may carry the day to come back on, mostly a `W` that waits on a
+date or on someone's answer: `/todo add W answer from DBA --on 11-15`, or later
+`/todo due W3 tomorrow` (`/todo due W3 clear` removes it). A day is `YYYY-MM-DD`, `MM-DD`
+(this year, or next year once passed), `today`, `tomorrow` or `+Nd`. The `window` tool takes the
+same as `due` on op `add` and on op `due`; the observer keeps the days and sets none. The pane
+shows the day after the title (`W3 answer from DBA · 11-15`), yellow on the day and red once
+passed, and the status line counts the days that have come (`W2 (1 due)`). A `/clear` carries the
+days with the open items, and the 30-day cleanup of old lists keeps a list while an open item has
+a day, passed or not.
+
+**`/todo sessions`.** Lists the sessions whose window list still has an open item, so a session
+left open to wait can be found and resumed: whether it runs (`●`), the first 8 characters of its
+id, the open count, the nearest day (`!` once it has come), how long ago its list changed, its
+folder and its title (the name given with `/rename`, else Claude Code's own title, else the first
+prompt). Sessions with a day that has come come first, then the newest. Each row is followed by
+the command that resumes it (`cd <folder> && claude --resume <id>`), or for a running one in tmux
+by the `tmux switch-client` that reaches it. The lists are this plugin's store; whether a session
+runs comes from `~/.claude/sessions/<pid>.json` and one `ps` call, folders and titles from the
+transcripts (read with `tail` and `head` when over 4 MiB). What cannot be read is named under the
+list.
+
 **The Stop reminder.** When an answer ends on a question and the list has no open `Q` item, the
 turn is sent back once with a request to add it.
 
@@ -92,11 +113,26 @@ text). Keys in the pane:
 | `↑` `↓` (`k` `j`) | select a window item; scroll on the Plan page |
 | `Space` (`x`) | mark the selected item done |
 | `s` | move it down («can wait») |
-| `Tab`, `0` `1` `2` `3` | pages: all, plan, window list, activity |
-| `/` | a command: `/todo done <ids>`, `/todo skip <ids>`, `/todo prune`, `/todo show` |
+| `Tab`, `0` `1` `2` `3` `4` | pages: all, plan, window list, activity, sessions |
+| `Enter` | on the Sessions page: go to the selected session |
+| `/` | a command: `/todo done <ids>`, `/todo skip <ids>`, `/todo due <ids> <date\|clear>`, `/todo prune`, `/todo show` |
 
 A change made in the pane waits in `<state>.inbox.json` until the mod applies it (within two
 seconds, or at the next prompt) and shows at once, marked as waiting. The plan is view-only.
+
+**The Sessions page** (`4`) is `/todo sessions` in the pane, two rows a session, read again
+every three seconds while it shows. It reads, without changing anything, every
+`~/.claude/plugins/store/window-todo_*.json` (the `.before-*` backups excepted; where two stores
+hold a session the newer list wins), the Codex lists in the state directory (marked `codex`), the
+sessions files and the transcripts. `Enter` on a running session switches the tmux client to its
+pane (the `tmux` field of its sessions file). On one that does not run it starts the launcher with
+`--resume <id>` in the session's folder: a tmux session of its own with its pane, and the client
+switches there (`codex resume <id>` through the Codex launcher for a Codex row). Outside tmux, or
+without the launcher, it shows the command instead. Nothing is stopped. To look at it once:
+
+```shell
+node dist/codex/panel.cjs --once --page sessions   # or --page 4
+```
 
 ### Install
 
@@ -136,7 +172,7 @@ Review and trust the bundled hooks when Codex asks. The Codex manifest explicitl
 its MCP configuration, skill and command hooks; it does not load the Claude hooks module.
 
 The `plan` MCP tool supports `set`, `add`, `update`, `remove` and `show`. The `window` tool
-supports `show`, `add`, `done`, `skip` and `prune`, with the same stable T/F/Q/W IDs as Claude.
+supports `show`, `add`, `done`, `skip`, `due` and `prune`, with the same stable T/F/Q/W IDs as Claude.
 When using the installed plugin directly, pass the current Codex thread ID as `sessionId`
 on every tool call. The session-start hook supplies that ID. Each conversation has its own
 state; background agents should report their findings to the main agent rather than change
