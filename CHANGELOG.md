@@ -1,3 +1,9 @@
+## [0.11.2](https://github.com/mrtaler/window-todo/compare/v0.11.1...v0.11.2) (2026-11-13)
+
+### Bug Fixes
+
+* keep the observer from restating items and from logging the agent's own next steps ([717810e](https://github.com/mrtaler/window-todo/commit/717810eb2471cfe7117ed2e020d231fb7174b748))
+
 ## [0.11.1](https://github.com/mrtaler/window-todo/compare/v0.11.0...v0.11.1) (2026-11-12)
 
 ### Bug Fixes
